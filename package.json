@@ -1,6 +1,6 @@
 {
   "name": "@eankhbayar/agent-runtime",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "description": "Runtimes for sandboxed coding agents: the run-event contract, executeRun and the store interfaces, pipeline run events, a shared model client, a job harness and Cloud Run dispatch, Docker and Cloud Run sandbox providers, the egress gateway with project data commands and the agent-data CLI, and the pi runtime's in-sandbox runner.",
   "license": "UNLICENSED",
   "private": true,
@@ -65,7 +65,7 @@
     "release": "node scripts/release.mjs"
   },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": ">=0.85.1 <1",
+    "@earendil-works/pi-coding-agent": ">=0.85.1 <2",
     "typebox": "^1.3.30"
   },
   "peerDependenciesMeta": {
@@ -80,7 +80,7 @@
     "@ai-sdk/anthropic": "4.0.59",
     "@ai-sdk/openai": "4.0.72",
     "@ai-sdk/openai-compatible": "3.0.51",
-    "@earendil-works/pi-coding-agent": "0.85.1",
+    "@earendil-works/pi-coding-agent": "1.5.0",
     "@types/node": "^24",
     "typebox": "^1.3.30",
     "typescript": "^7.0.2",

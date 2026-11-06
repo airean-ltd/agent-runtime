@@ -527,6 +527,10 @@ Everything a sandbox leaves behind is treated as hostile. `download` runs `tar` 
 
 `createFakeSandboxCli()` from `./testing` writes an executable that behaves as the real CLI does where a test can tell (it loses exit codes, keeps a command running when killed, records every call), to pass as `sandboxBin`; commands run on the test's host with paths inside binds rewritten, and limits are recorded but not applied. `startFakeUpstream({ apiKey })` is a model endpoint that checks the key and streams its reply as SSE: Messages at its `messagesUrl` (key as `x-api-key`), and Chat Completions under its `baseUrl` (key as a bearer token), or answers with JSON when the request does not ask to stream. `refuse` answers a request with a status, headers and body of the test's choosing, and `headerDelayMs` holds every response back, for testing a client's errors and timeouts.
 
+## Upgrading from 0.11
+
+Nothing in this package's API changes. The pi peer range is now `>=0.85.1 <2`, and the runner is built and tested against pi 1.5.0, so a sandbox image can stay on 0.85 or move to 1.x when the project is ready. On 1.5, tool arguments are checked by `@earendil-works/pi-schema` rather than TypeBox: a tool whose parameters use TypeBox features outside JSON Schema (`Type.Refine()`, `Type.BigInt()`, `Type.Undefined()`, codecs, `Format.Set()` formats) no longer has them applied, and a call that fails shows the model pi-schema's messages (`- kind: expected "table"`). `save_output` and the data tools use plain JSON Schema and behave as before. Sessions written by 0.85 resume unchanged; the session format is still version 3.
+
 ## Upgrading from 0.10
 
 Nothing changes unless you pass `dataAccess: "tools"` to `runAgent` (see [Data commands](#data-commands)). New in `./pi/runner`: `createDataTools`, `dataToolName` and `dataToolsPromptSection`. `runAgent` now refuses two tools with the same name.
