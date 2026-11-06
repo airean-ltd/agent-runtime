@@ -1,6 +1,6 @@
 # @eankhbayar/agent-runtime
 
-Runtimes for running coding agents inside a sandbox and streaming what they do as a stable event log. One runtime today, `pi`; others sit beside it as they arrive. Extracted from the HKJC analysis runtime.
+Runtimes for running coding agents inside a sandbox and streaming what they do as a stable event log. Two runtimes today: `pi`, and `pi-durable`, which is experimental (see [pi-durable](#pi-durable-experimental)); others sit beside them as they arrive. Extracted from the HKJC analysis runtime.
 
 Each directory below is imported by its path under `src/`, e.g. `@eankhbayar/agent-runtime/providers/docker`:
 
@@ -14,6 +14,7 @@ src/dispatch/cloud-run/ for an app's Convex: Google tokens without a key, starti
 src/providers/docker/   the Docker `SandboxProvider`, `docker stats` sampling, and gateway control (`createGateway`)
 src/providers/cloud-run/ the Cloud Run `SandboxProvider` for a job's `sandbox` CLI, and the stdio bridge with its in-sandbox shim
 src/pi/runner/          runs in the sandbox: `runAgent`, the pi event adapter, the `save_output` tool
+src/pi-durable/runner/  runs in the sandbox, experimental: `runDurableAgent`, which checkpoints every step and carries a stopped run on in its next attempt
 src/testing/            `FakeSandboxProvider`, `FakeSink`, `FakeRunStore`, a fake `sandbox` CLI and a fake model endpoint (Messages and Chat Completions), for a project's tests
 gateway/                egress gateway image, shared by every runtime: holds the provider key, proxies Anthropic Messages or OpenAI Chat Completions calls for valid run tokens
 infra/cloud-run/        scripts that set up Convex's federation and deploy a Cloud Run Job
@@ -543,6 +544,39 @@ Everything a sandbox leaves behind is treated as hostile. `download` runs `tar` 
 ### Testing
 
 `createFakeSandboxCli()` from `./testing` writes an executable that behaves as the real CLI does where a test can tell (it loses exit codes, keeps a command running when killed, records every call), to pass as `sandboxBin`; commands run on the test's host with paths inside binds rewritten, and limits are recorded but not applied. `startFakeUpstream({ apiKey })` is a model endpoint that checks the key and streams its reply as SSE: Messages at its `messagesUrl` (key as `x-api-key`), and Chat Completions under its `baseUrl` (key as a bearer token), or answers with JSON when the request does not ask to stream. `refuse` answers a request with a status, headers and body of the test's choosing, and `headerDelayMs` holds every response back, for testing a client's errors and timeouts.
+
+## pi-durable (experimental)
+
+`runDurableAgent` from `./pi-durable/runner` runs the agent on [pi-durable](https://earendil.com/posts/pi-durable/) instead of pi's coding agent. It reads the same environment and writes the same run events, so `executeRun`, the gateway, the providers, the stores and the fold need nothing new, and a project switches runtime by switching the runner its image runs.
+
+```ts
+import { createDurableSaveOutputTool, runDurableAgent } from "@eankhbayar/agent-runtime/pi-durable/runner";
+
+await runDurableAgent({
+  defaultModel: { provider: "kimi-coding", model: "kimi-for-coding" },
+  systemPrompt: ({ outputsDir }) => `You analyse … Write results to ${outputsDir}.`,
+  customTools: ({ outputsDir, emit }) => [
+    createDurableSaveOutputTool({ outputsDir, emit, kinds: ["table", "chart", "report"] }),
+  ],
+});
+```
+
+What it changes is what a run survives. pi-durable commits every model turn and tool call to `/workspace/.sessions/durable.sqlite`, the directory `executeRun`'s `session` saves and restores, and the runner submits the prompt with `RUN_ID` as its request id. A later attempt of the same run, after a pause or after a job released it on shutdown, therefore finds the run it started and goes on from its last checkpoint: it does not send the prompt again, and an answer cut off mid-stream counts as a failed attempt and is retried. A tool call cut off after it started is not run again; the model gets an "interrupted" error result for it and decides what to do. A call cut off before it started runs as normal. A run with another `RUN_ID` on the same session is the thread's next message. The pi runner, by contrast, reopens the thread's session and sends the prompt again as a new message. A runner stopped with SIGTERM closes its storage first, so a model request it was waiting on is sent again rather than charged as a failure.
+
+How it differs from `runAgent`:
+
+- `RUN_ID` is required.
+- The built-in tools are pi-durable's `read`, `bash`, `edit` and `write`; there is no `grep`, `find` or `ls` (the agent uses bash). `customTools` are pi-durable tools (`defineTool` from `@earendil-works/pi-durable`, parameters from `@earendil-works/pi-schema`), and `createDurableSaveOutputTool` is `save_output` for it. A tool declared `replay: "safe"` is run again after a cut-off instead of answering "interrupted"; only declare that for a tool that can safely run twice.
+- Data commands are offered through the `agent-data` CLI only; `dataAccess: "tools"` is not supported yet.
+- `run_started` carries `runtime: "pi-durable"`, and `sessionFile` is the SQLite file.
+
+The session survives only what `executeRun` saves. That is everything up to the moment the runner exits, including a crash or kill of the runner inside the sandbox. It does not cover the sandbox or the job dying first, since nothing then copies the file out; checkpoints that outlive the sandbox need a pi-durable storage outside it, which this package does not have yet. As with the pi runner, each attempt numbers its events from 0, so a store that keeps one log per run across attempts must offset them.
+
+Install `@earendil-works/pi-durable`, `@earendil-works/chord` and `@earendil-works/pi-schema` at exactly 1.5.0 beside `@earendil-works/pi-coding-agent` 1.5.0 in the sandbox's `package.json`. pi-durable is experimental and changes its API between releases (1.5.0 removed the event stream 1.0 shipped with), so this runner is built against one version at a time.
+
+## Upgrading from 0.13
+
+Nothing changes unless you use the new `./pi-durable/runner` (see [pi-durable](#pi-durable-experimental)). Its packages are optional peer dependencies, so installing the tag pulls in nothing new. The pi runtime's `save_output` behaves as before; its check and `artifact` event now come from a function both runtimes share.
 
 ## Upgrading from 0.12
 

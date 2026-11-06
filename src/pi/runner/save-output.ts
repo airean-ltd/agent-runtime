@@ -8,6 +8,32 @@ import { Type } from "typebox";
 import type { EmitRunEvent } from "../../contract/events.ts";
 
 /**
+ * Checks that `file` is inside `outputsDir` and emits the `artifact` event the
+ * dispatcher copies it out on; returns the tool's answer. Shared by each
+ * runtime's `save_output`.
+ */
+export async function saveOutput(
+  outputsDir: string,
+  emit: EmitRunEvent,
+  file: { path: string; kind: string; caption: string },
+): Promise<string> {
+  const resolved = path.resolve(outputsDir, file.path);
+  if (!resolved.startsWith(`${path.resolve(outputsDir)}${path.sep}`)) {
+    throw new Error(`Outputs must be inside ${outputsDir}`);
+  }
+  const [bytes, info] = await Promise.all([readFile(resolved), stat(resolved)]);
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  emit("artifact", {
+    path: resolved,
+    kind: file.kind,
+    caption: file.caption,
+    sha256,
+    size: info.size,
+  });
+  return `Saved ${resolved} (${info.size} bytes)`;
+}
+
+/**
  * The tool an agent registers a result file with. It emits the `artifact` event
  * the dispatcher copies the file out on; `kinds` are the project's own.
  */
@@ -29,24 +55,9 @@ export function createSaveOutputTool(opts: {
       kind: Type.Union(opts.kinds.map((k) => Type.Literal(k))),
       caption: Type.String({ description: "One sentence describing what the file shows" }),
     }),
-    execute: async (_toolCallId, params) => {
-      const resolved = path.resolve(outputsDir, params.path);
-      if (!resolved.startsWith(`${path.resolve(outputsDir)}${path.sep}`)) {
-        throw new Error(`Outputs must be inside ${outputsDir}`);
-      }
-      const [bytes, info] = await Promise.all([readFile(resolved), stat(resolved)]);
-      const sha256 = createHash("sha256").update(bytes).digest("hex");
-      emit("artifact", {
-        path: resolved,
-        kind: params.kind,
-        caption: params.caption,
-        sha256,
-        size: info.size,
-      });
-      return {
-        content: [{ type: "text", text: `Saved ${resolved} (${info.size} bytes)` }],
-        details: {},
-      };
-    },
+    execute: async (_toolCallId, params) => ({
+      content: [{ type: "text", text: await saveOutput(outputsDir, emit, params) }],
+      details: {},
+    }),
   });
 }
