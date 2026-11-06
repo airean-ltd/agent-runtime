@@ -59,7 +59,10 @@ export interface SandboxProvider {
   // Copies a local directory's contents into the sandbox, owned by root and
   // read-only to the command user.
   upload(sandboxId: string, localDir: string, remoteDir: string): Promise<void>;
-  download(sandboxId: string, remotePath: string, localPath: string): Promise<void>;
+  // Copies a sandbox file or directory into the local directory `localPath`,
+  // never following a link on the way. With `links`, symlinks come out as
+  // links; otherwise a provider may refuse them, and executeRun does.
+  download(sandboxId: string, remotePath: string, localPath: string, opts?: { links?: boolean }): Promise<void>;
   exec(sandboxId: string, command: string[], opts?: ExecOptions): ExecHandle;
   pause(sandboxId: string): Promise<void>;
   resume(sandboxId: string): Promise<void>;

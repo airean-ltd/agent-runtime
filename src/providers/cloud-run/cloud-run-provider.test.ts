@@ -1,4 +1,4 @@
-import { chmod, mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, readlink, stat, writeFile } from "node:fs/promises";
 import { createServer, request } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -191,6 +191,21 @@ describe("CloudRunSandboxProvider", { timeout: 30_000 }, () => {
     expect(await readFile(path.join(out, "staged", "sub", "a.txt"), "utf8")).toBe("alpha\n");
     await expect(p.download(id, "/workspace/missing", out)).rejects.toThrow();
     await expect(p.download(id, "/tmp/missing", out)).rejects.toThrow();
+  });
+
+  it("downloads symlinks as links only when asked, and never follows one", async () => {
+    const p = provider();
+    const id = await p.create({ image: "", limits: LIMITS });
+    // Made inside the sandbox, as a venv would be.
+    const made = await run(p, id, ["sh", "-c", "mkdir -p /tmp/ws/venv/bin && ln -s /usr/bin/python3 /tmp/ws/venv/bin/python && echo x > /tmp/ws/a"]);
+    expect(made.code).toBe(0);
+
+    const strict = await mkdtemp(path.join(tmpdir(), "agent-runtime-download-"));
+    await expect(p.download(id, "/tmp/ws", strict)).rejects.toThrow("is a symlink");
+    const out = await mkdtemp(path.join(tmpdir(), "agent-runtime-download-"));
+    await p.download(id, "/tmp/ws", out, { links: true });
+    expect(await readlink(path.join(out, "ws/venv/bin/python"))).toBe("/usr/bin/python3");
+    expect(await readFile(path.join(out, "ws/a"), "utf8")).toBe("x\n");
   });
 
   it("cannot pause or resume, and forgets a destroyed sandbox", async () => {

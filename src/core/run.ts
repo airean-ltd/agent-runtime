@@ -6,7 +6,7 @@
 // This file never calls docker, a store or the gateway directly.
 
 import { createHash, randomBytes } from "node:crypto";
-import { mkdtemp, rm, stat } from "node:fs/promises";
+import { chmod, lstat, mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -67,8 +67,25 @@ export type SessionOptions = {
   store: SessionStore;
   /** Usually the thread's id. */
   key: string;
-  /** The session directory in the sandbox. Default `/workspace/.sessions`, where the pi runner keeps it. */
+  /**
+   * The session directory in the sandbox. Default `/workspace/.sessions`, where
+   * the pi runner keeps it; `/workspace` keeps the whole workspace, as a
+   * sandbox service's pause does (see `links` and `exclude`).
+   */
   remoteDir?: string;
+  /**
+   * Keep symlinks, as links the job never follows, for a directory holding a
+   * venv or node_modules. The store must keep them too (DirectorySessionStore's
+   * `links`). Default false: a session holding one is not saved.
+   */
+  links?: boolean;
+  /**
+   * Paths under `remoteDir` left out of the save, such as `outputs`, which the
+   * run already copies out, or `.cache`.
+   */
+  exclude?: readonly string[];
+  /** The most a saved session may hold. Default 256 MiB. */
+  maxBytes?: number;
 };
 
 export type EventSink = {
@@ -241,6 +258,9 @@ async function restoreSession(
   const local = await mkdtemp(path.join(tmpdir(), "agent-runtime-session-"));
   try {
     if (!(await session.store.restore(session.key, local))) return false;
+    // mkdtemp makes it 0700, and docker cp carries that into the sandbox as a
+    // root-owned directory the runner's user could not read.
+    await chmod(local, 0o755);
     const staged = `/tmp/agent-runtime-session-${randomBytes(6).toString("hex")}`;
     await provider.upload(sandboxId, local, staged);
     let stderr = "";
@@ -256,6 +276,32 @@ async function restoreSession(
   }
 }
 
+/** `exclude` as path parts; throws for one that is not a path inside the session. */
+function excludedParts(exclude: readonly string[]): string[][] {
+  return exclude.map((entry) => {
+    const parts = entry.split("/").filter((part) => part !== "" && part !== ".");
+    if (entry.startsWith("/") || parts.length === 0 || parts.includes("..")) {
+      throw new Error(`session.exclude must name paths inside the session directory, not ${JSON.stringify(entry)}`);
+    }
+    return parts;
+  });
+}
+
+/** Deletes `exclude` from the downloaded copy, never through a link the sandbox made. */
+async function dropExcluded(dir: string, exclude: readonly string[]): Promise<void> {
+  for (const parts of excludedParts(exclude)) {
+    let parent = dir;
+    for (const part of parts.slice(0, -1)) {
+      parent = path.join(parent, part);
+      // A link, or nothing: nothing under it came out, so there is nothing to drop.
+      if (!(await lstat(parent).catch(() => null))?.isDirectory()) break;
+    }
+    if (!(await lstat(parent).catch(() => null))?.isDirectory()) continue;
+    // rm takes a link itself away, not what it names.
+    await rm(path.join(parent, parts.at(-1)!), { recursive: true, force: true });
+  }
+}
+
 /** Stores the sandbox's session; false, and logged, when there was none or it failed. */
 async function saveSession(
   provider: SandboxProvider,
@@ -267,7 +313,7 @@ async function saveSession(
   const local = await mkdtemp(path.join(tmpdir(), "agent-runtime-session-"));
   try {
     try {
-      await provider.download(sandboxId, remoteDir, local);
+      await provider.download(sandboxId, remoteDir, local, { links: session.links });
     } catch (cause) {
       // A runner that failed before pi started has written no session; the stored one stays.
       log(`no session to save at ${remoteDir}: ${String(cause)}`);
@@ -278,9 +324,11 @@ async function saveSession(
       log(`no session to save at ${remoteDir}`);
       return false;
     }
-    // The sandbox wrote this. A symlink in it, or for it, would have the store
-    // archive whatever the job can reach there: every other thread's session.
-    await assertPlainTree(dir, MAX_OUTPUT_BYTES);
+    await dropExcluded(dir, session.exclude ?? []);
+    // The sandbox wrote this. A symlink in it, or for it, followed, would have
+    // the store archive whatever the job can reach there: every other thread's
+    // session. With `links` they are kept as links, and never followed.
+    await assertPlainTree(dir, session.maxBytes ?? MAX_OUTPUT_BYTES, { links: session.links });
     await session.store.save(session.key, dir);
     return true;
   } catch (cause) {
@@ -297,6 +345,8 @@ export async function executeRun(opts: ExecuteRunOptions): Promise<RunOutcome> {
   const batchEvents = opts.batchEvents ?? BATCH_EVENTS;
   const retries = opts.retries ?? RETRIES;
   const retryMs = opts.retryMs ?? RETRY_MS;
+  // A bad exclude would otherwise surface only when the session is saved.
+  excludedParts(opts.session?.exclude ?? []);
 
   // Stopped before it began, as a job shut down between its claim and its
   // work is: nothing is built, resumed or started, and nothing is written.

@@ -238,3 +238,35 @@ describe("executeRun copying out of any sandbox", () => {
     expect(store.saved.size).toBe(0);
   });
 });
+
+describe("executeRun keeping the whole workspace", () => {
+  it("saves the workspace without what exclude names, and restores it into the next sandbox", async () => {
+    const store = new DirectorySessionStore(await mkdtemp(path.join(tmpdir(), "agent-runtime-store-")), { links: true });
+    const session = { store, key: "thread_1", remoteDir: "/workspace", links: true, exclude: ["outputs", ".cache/pip"] };
+    const first = new FakeSandboxProvider({
+      ...ANSWER,
+      files: {
+        "/workspace/notes.txt": "kept\n",
+        "/workspace/.sessions/s.jsonl": '{"turn":1}\n',
+        "/workspace/outputs/chart.png": "png",
+        "/workspace/.cache/pip/wheel": "big",
+        "/workspace/.cache/keep": "small",
+      },
+    });
+    expect((await start(first, store, { session }).outcome).session).toEqual({ restored: false, saved: true });
+
+    const second = new FakeSandboxProvider(ANSWER);
+    expect((await start(second, store, { session }).outcome).session?.restored).toBe(true);
+    const restored = [...second.fs.keys()].filter((p) => p.startsWith("/workspace/")).sort();
+    expect(restored).toEqual(["/workspace/.cache/keep", "/workspace/.sessions/s.jsonl", "/workspace/notes.txt"]);
+  });
+
+  it("refuses an exclude outside the session before building anything", async () => {
+    for (const exclude of ["../etc", "/etc", "."]) {
+      const provider = new FakeSandboxProvider(ANSWER);
+      const session = { store: new MemoryStore(), key: "thread_1", exclude: [exclude] };
+      await expect(start(provider, session.store, { session }).outcome).rejects.toThrow("session.exclude must name paths inside");
+      expect(provider.calls).toEqual([]);
+    }
+  });
+});

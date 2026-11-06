@@ -300,9 +300,10 @@ export class CloudRunSandboxProvider implements SandboxProvider {
   /**
    * Packed by tar inside the sandbox, where a symlink resolves in the
    * sandbox's own view and so cannot reach a hidden path or the job's files,
-   * and unpacked here as directories and regular files only.
+   * and unpacked here as directories and regular files only, or with `links`
+   * symlinks too, made as links and never followed (see plain-files.ts).
    */
-  async download(sandboxId: string, remotePath: string, localPath: string): Promise<void> {
+  async download(sandboxId: string, remotePath: string, localPath: string, opts: { links?: boolean } = {}): Promise<void> {
     const max = this.opts.maxDownloadBytes ?? 512 * 1024 * 1024;
     const marker = newExitMarker();
     const script = `cd "$(dirname "$1")" && tar -cf - "$(basename "$1")"; code=$?; ${printExitMarker(marker)}`;
@@ -331,7 +332,7 @@ export class CloudRunSandboxProvider implements SandboxProvider {
         throw new Error(`Could not download ${remotePath} (${code ?? "no exit code"}): ${stderr.trim()}`);
       }
       await truncate(archive, size - (tail.length - body.length));
-      await extractPlainTar(archive, localPath, max);
+      await extractPlainTar(archive, localPath, max, { links: opts.links });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
