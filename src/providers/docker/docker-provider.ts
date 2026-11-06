@@ -8,7 +8,17 @@
 
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import { createReadStream, createWriteStream } from "node:fs";
 
+import {
+  NO_DIRECTORY,
+  PACK_SCRIPT,
+  packArgs,
+  packed,
+  type PackOptions,
+  UNPACK_SCRIPT,
+  unpackArgs,
+} from "../../core/archive.ts";
 import { docker, DockerError } from "./docker.ts";
 import type {
   BindMount,
@@ -158,6 +168,68 @@ export class DockerSandboxProvider implements SandboxProvider {
 
   async download(sandboxId: string, remotePath: string, localPath: string): Promise<void> {
     await docker(["cp", `${sandboxId}:${remotePath}`, localPath]);
+  }
+
+  /** tar in the sandbox as its user, its stdout streamed to `archive` up to `maxBytes`. */
+  packDir(sandboxId: string, remoteDir: string, archive: string, opts: PackOptions): Promise<boolean> {
+    return new Promise((resolve, reject) => {
+      const child = spawn("docker", ["exec", sandboxId, "sh", "-c", PACK_SCRIPT, "sh", remoteDir, ...packArgs(opts)], {
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      const out = createWriteStream(archive, { flags: "wx" });
+      let size = 0;
+      let overflow = false;
+      let stderr = "";
+      child.stdout.on("data", (d: Buffer) => {
+        size += d.length;
+        if (size > opts.maxBytes && !overflow) {
+          overflow = true;
+          child.kill("SIGKILL");
+        }
+      });
+      child.stdout.pipe(out);
+      child.stderr.setEncoding("utf8").on("data", (d: string) => (stderr = `${stderr}${d}`.slice(-4_000)));
+      child.on("error", (error) => {
+        out.destroy();
+        reject(error);
+      });
+      const written = new Promise<void>((done, fail) => {
+        out.on("finish", done);
+        out.on("error", fail);
+      });
+      child.on("close", (code) => {
+        written.then(() => {
+          if (overflow) reject(new Error(`${remoteDir} packs to more than ${opts.maxBytes} bytes`));
+          else if (code === NO_DIRECTORY) resolve(false);
+          else if (packed(code)) resolve(true);
+          else reject(new Error(`Packing ${remoteDir} exited ${code}: ${stderr.trim()}`));
+        }, reject);
+      });
+    });
+  }
+
+  /** `archive` into tar in the sandbox, run as its user, so the files are the runner's. */
+  unpackDir(sandboxId: string, archive: string, remoteDir: string, opts: { gzip?: boolean }): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const child = spawn(
+        "docker",
+        ["exec", "-i", sandboxId, "sh", "-c", UNPACK_SCRIPT, "sh", remoteDir, ...unpackArgs(opts)],
+        { stdio: ["pipe", "ignore", "pipe"] },
+      );
+      let stderr = "";
+      child.stderr.setEncoding("utf8").on("data", (d: string) => (stderr = `${stderr}${d}`.slice(-4_000)));
+      child.stdin.on("error", () => {});
+      const input = createReadStream(archive);
+      input.on("error", (error) => {
+        child.kill("SIGKILL");
+        reject(error);
+      });
+      input.pipe(child.stdin);
+      child.on("error", reject);
+      child.on("close", (code) =>
+        code === 0 ? resolve() : reject(new Error(`Unpacking into ${remoteDir} exited ${code}: ${stderr.trim()}`)),
+      );
+    });
   }
 
   exec(sandboxId: string, command: string[], opts: ExecOptions = {}): ExecHandle {

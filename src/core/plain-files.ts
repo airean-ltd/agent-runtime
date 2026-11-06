@@ -3,12 +3,27 @@
 // follows through one leads to the job's own files: a hidden secret, another
 // thread's session, /proc/self/environ. So what comes out of a sandbox is
 // taken as regular files and directories only, never followed, and capped.
+//
+// A whole workspace has symlinks the agent needs back (a venv's python,
+// node_modules/.bin), so `links: true` keeps them, as data. Where a link
+// points is the sandbox's business and is never checked: only the sandbox
+// resolves it, in its own view. What keeps the job safe is that it never goes
+// through one: links are created last, nothing is created under one, and
+// nothing here reads or writes through them.
 
 import { constants } from "node:fs";
-import { lstat, mkdir, open, readdir, type FileHandle } from "node:fs/promises";
+import { copyFile, lstat, mkdir, open, readdir, symlink, type FileHandle } from "node:fs/promises";
 import path from "node:path";
 
 export class UnsafeFileError extends Error {}
+
+export type PlainOptions = {
+  /** Keep symlinks as links, never followed; and, extracting, hard links as copies. Default false. */
+  links?: boolean;
+};
+
+/** The longest link target kept, as Linux's PATH_MAX. */
+const MAX_LINK_TARGET = 4096;
 
 /** Reads a regular file, refusing a symlink (at the last component) or anything else. */
 export async function readPlainFile(file: string, maxBytes: number): Promise<Buffer> {
@@ -35,9 +50,11 @@ export async function readPlainFile(file: string, maxBytes: number): Promise<Buf
 
 /**
  * Checks that `dir` and everything under it are plain directories and
- * regular files, at most `maxBytes` in all, without following anything.
+ * regular files, at most `maxBytes` in all, without following anything. With
+ * `links`, symlinks under `dir` pass too, unread; `dir` itself must still be
+ * a directory.
  */
-export async function assertPlainTree(dir: string, maxBytes: number): Promise<void> {
+export async function assertPlainTree(dir: string, maxBytes: number, options: PlainOptions = {}): Promise<void> {
   let total = 0;
   const walk = async (current: string): Promise<void> => {
     const info = await lstat(current);
@@ -46,7 +63,7 @@ export async function assertPlainTree(dir: string, maxBytes: number): Promise<vo
     } else if (info.isFile()) {
       total += info.size;
       if (total > maxBytes) throw new UnsafeFileError(`more than ${maxBytes} bytes`);
-    } else {
+    } else if (!(options.links && info.isSymbolicLink() && current !== dir)) {
       throw new UnsafeFileError(`${path.relative(dir, current) || "."} is not a regular file or directory`);
     }
   };
@@ -94,26 +111,41 @@ function paxRecords(data: Buffer): Record<string, string> {
   return records;
 }
 
-/** A member's path inside `into`; throws for one that would leave it. */
-function memberPath(into: string, name: string): string | null {
+/** A member's path inside the archive, as `a/b`; throws for one that would leave it. */
+function memberName(name: string): string | null {
   const parts = name.split("/").filter((part) => part !== "" && part !== ".");
   if (name.startsWith("/") || parts.includes("..")) {
     throw new UnsafeFileError(`${name} points outside the archive`);
   }
-  return parts.length === 0 ? null : path.join(into, ...parts);
+  return parts.length === 0 ? null : parts.join("/");
+}
+
+/** `a/b/c` -> `a`, `a/b`. */
+function ancestors(name: string): string[] {
+  const parts = name.split("/");
+  return parts.slice(0, -1).map((_, i) => parts.slice(0, i + 1).join("/"));
 }
 
 /**
  * Extracts a tar archive into the existing directory `into`, creating only
  * directories and regular files (with O_EXCL and O_NOFOLLOW) and rejecting
  * links, devices, paths that leave `into`, and more than `maxBytes` of file
- * data. Reads GNU, ustar and pax archives.
+ * data. A file keeps its executable bit and nothing else of its mode. Reads
+ * GNU, ustar and pax archives.
+ *
+ * With `links`, a symlink is made as it was, pointing wherever it pointed,
+ * once everything else is in place, and an archive with anything under a
+ * symlink is refused; a hard link is made a copy of the file it links to.
  */
 export async function extractPlainTar(
   archive: string,
   into: string,
   maxBytes: number,
+  options: PlainOptions = {},
 ): Promise<void> {
+  const members: string[] = [];
+  const files = new Set<string>();
+  const links = new Map<string, string>();
   const handle = await open(archive, "r");
   try {
     const read = async (length: number, position: number): Promise<Buffer> => {
@@ -126,6 +158,7 @@ export async function extractPlainTar(
     let position = 0;
     let total = 0;
     let longName: string | null = null;
+    let longLink: string | null = null;
     let pax: Record<string, string> = {};
     let ended = false;
     while (position + BLOCK <= size) {
@@ -145,21 +178,50 @@ export async function extractPlainTar(
       const padded = Math.ceil(length / BLOCK) * BLOCK;
       if (position + padded > size) throw new UnsafeFileError("the archive ends early");
 
-      if (type === "L" || type === "x" || type === "g") {
+      if (type === "L" || type === "K" || type === "x" || type === "g") {
         if (length > 1024 * 1024) throw new UnsafeFileError("header too large");
         const data = await read(length, position);
         position += padded;
         if (type === "L") longName = field(data, 0, data.length);
+        else if (type === "K") longLink = field(data, 0, data.length);
         else if (type === "x") pax = paxRecords(data);
         continue;
       }
+      const linkName = pax.linkpath ?? longLink ?? field(header, 157, 100);
       longName = null;
+      longLink = null;
       pax = {};
       name = name.replace(/\/+$/, "");
 
       if (type === "5") {
-        const target = memberPath(into, name);
-        if (target) await mkdir(target, { recursive: true, mode: 0o755 });
+        const member = memberName(name);
+        if (member) {
+          members.push(member);
+          await mkdir(path.join(into, member), { recursive: true, mode: 0o755 });
+        }
+        position += padded;
+        continue;
+      }
+      if (options.links && (type === "2" || type === "1")) {
+        const member = memberName(name);
+        if (!member) throw new UnsafeFileError("a link with no name");
+        if (!linkName || linkName.length > MAX_LINK_TARGET || linkName.includes("\0")) {
+          throw new UnsafeFileError(`${name} links to an unusable target`);
+        }
+        members.push(member);
+        if (type === "2") {
+          if (links.has(member)) throw new UnsafeFileError(`${name} is in the archive twice`);
+          links.set(member, linkName);
+        } else {
+          // A hard link names an earlier member; it becomes a copy of that file.
+          const source = memberName(linkName);
+          if (!source || !files.has(source)) throw new UnsafeFileError(`${name} links to a file the archive does not hold`);
+          total += (await lstat(path.join(into, source))).size;
+          if (total > maxBytes) throw new UnsafeFileError(`more than ${maxBytes} bytes`);
+          await mkdir(path.dirname(path.join(into, member)), { recursive: true, mode: 0o755 });
+          await copyFile(path.join(into, source), path.join(into, member), constants.COPYFILE_EXCL);
+          files.add(member);
+        }
         position += padded;
         continue;
       }
@@ -169,13 +231,16 @@ export async function extractPlainTar(
       }
       total += length;
       if (total > maxBytes) throw new UnsafeFileError(`more than ${maxBytes} bytes`);
-      const target = memberPath(into, name);
-      if (!target) throw new UnsafeFileError("a file with no name");
+      const member = memberName(name);
+      if (!member) throw new UnsafeFileError("a file with no name");
+      members.push(member);
+      files.add(member);
+      const target = path.join(into, member);
       await mkdir(path.dirname(target), { recursive: true, mode: 0o755 });
       const out = await open(
         target,
         constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
-        0o644,
+        octal(header, 100, 8) & 0o111 ? 0o755 : 0o644,
       );
       try {
         for (let done = 0; done < length; ) {
@@ -192,5 +257,24 @@ export async function extractPlainTar(
     if (!ended) throw new UnsafeFileError("the archive ends early");
   } finally {
     await handle.close();
+  }
+
+  // Only now the symlinks, so nothing above was written through one; and none
+  // with anything under it, so making them goes through none either.
+  for (const member of members) {
+    const link = ancestors(member).find((ancestor) => links.has(ancestor));
+    if (link) throw new UnsafeFileError(`${member} is under the symlink ${link}`);
+  }
+  for (const [member, target] of links) {
+    const at = path.join(into, member);
+    await mkdir(path.dirname(at), { recursive: true, mode: 0o755 });
+    try {
+      await symlink(target, at);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+        throw new UnsafeFileError(`${member} is in the archive twice`);
+      }
+      throw error;
+    }
   }
 }

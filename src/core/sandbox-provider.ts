@@ -1,6 +1,8 @@
 // Only an adapter behind this interface talks to a sandbox platform. The
 // runner, the image and the run events must not depend on any one implementation.
 
+import type { PackOptions } from "./archive.ts";
+
 export type SandboxLimits = {
   cpus: number;
   memoryMb: number;
@@ -59,7 +61,16 @@ export interface SandboxProvider {
   // Copies a local directory's contents into the sandbox, owned by root and
   // read-only to the command user.
   upload(sandboxId: string, localDir: string, remoteDir: string): Promise<void>;
-  download(sandboxId: string, remotePath: string, localPath: string): Promise<void>;
+  // Copies a sandbox file or directory into the local directory `localPath`,
+  // never following a link on the way. With `links`, symlinks come out as
+  // links; otherwise a provider may refuse them, and executeRun does.
+  download(sandboxId: string, remotePath: string, localPath: string, opts?: { links?: boolean }): Promise<void>;
+  // Optional, for executeRun's `session.stream`: a directory as one tar
+  // archive, packed and unpacked by tar inside the sandbox (see archive.ts).
+  // `packDir` writes the archive to the new file `archive`, resolving false
+  // when the directory is not there; `unpackDir` unpacks one into a directory.
+  packDir?(sandboxId: string, remoteDir: string, archive: string, opts: PackOptions): Promise<boolean>;
+  unpackDir?(sandboxId: string, archive: string, remoteDir: string, opts: { gzip?: boolean }): Promise<void>;
   exec(sandboxId: string, command: string[], opts?: ExecOptions): ExecHandle;
   pause(sandboxId: string): Promise<void>;
   resume(sandboxId: string): Promise<void>;

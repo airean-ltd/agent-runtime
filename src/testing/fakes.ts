@@ -1,8 +1,11 @@
 // Test doubles for executeRun: a sandbox whose runner is a script of stdout
 // lines, and a sink that records what a run would have written.
 
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 
 import type { RunEvent, RunSample } from "../contract/events.ts";
 
@@ -15,6 +18,7 @@ import type {
   SandboxProvider,
   SandboxStatus,
 } from "../core/sandbox-provider.ts";
+import type { PackOptions } from "../core/archive.ts";
 import { SESSION_RESTORE_SCRIPT, type ArtifactUpload, type EventSink, type SinkState } from "../core/run.ts";
 
 export type FakeRun = {
@@ -35,6 +39,8 @@ export type FakeCreate = {
   labels?: Record<string, string>;
   binds?: BindMount[];
 };
+
+const run = promisify(execFile);
 
 /** Every file under a local directory, by its path relative to it. */
 async function walk(dir: string, prefix = ""): Promise<[string, Buffer][]> {
@@ -105,6 +111,38 @@ export class FakeSandboxProvider implements SandboxProvider {
       const local = path.join(target, path.posix.relative(remotePath, p));
       await mkdir(path.dirname(local), { recursive: true });
       await writeFile(local, body);
+    }
+  }
+
+  /** Packs the files under `remoteDir` with the host's tar, as tar in a sandbox would. */
+  async packDir(_sandboxId: string, remoteDir: string, archive: string, opts: PackOptions): Promise<boolean> {
+    this.calls.push(`pack ${remoteDir}`);
+    const under = [...this.fs].filter(([p]) => p.startsWith(`${remoteDir}/`));
+    if (under.length === 0) return false;
+    const dir = await mkdtemp(path.join(tmpdir(), "agent-runtime-fake-pack-"));
+    try {
+      for (const [p, body] of under) {
+        const relative = path.posix.relative(remoteDir, p);
+        if (opts.exclude?.some((entry) => relative === entry || relative.startsWith(`${entry}/`))) continue;
+        await mkdir(path.dirname(path.join(dir, relative)), { recursive: true });
+        await writeFile(path.join(dir, relative), body);
+      }
+      await run("tar", [opts.gzip ? "-czf" : "-cf", archive, "-C", dir, "."], { env: { ...process.env, COPYFILE_DISABLE: "1" } });
+      if ((await stat(archive)).size > opts.maxBytes) throw new Error(`${remoteDir} packs to more than ${opts.maxBytes} bytes`);
+      return true;
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }
+
+  async unpackDir(_sandboxId: string, archive: string, remoteDir: string, opts: { gzip?: boolean }): Promise<void> {
+    this.calls.push(`unpack ${remoteDir}`);
+    const dir = await mkdtemp(path.join(tmpdir(), "agent-runtime-fake-unpack-"));
+    try {
+      await run("tar", [opts.gzip ? "-xzf" : "-xf", archive, "-C", dir]);
+      for (const [relative, body] of await walk(dir)) this.fs.set(path.posix.join(remoteDir, relative), body);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
     }
   }
 

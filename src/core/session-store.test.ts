@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, readFile, readlink, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -16,6 +16,30 @@ async function sessionDir(files: Record<string, string>): Promise<string> {
   }
   return dir;
 }
+
+describe("DirectorySessionStore with links", () => {
+  it("keeps a workspace's symlinks and executable bits across a save and a restore", async () => {
+    const workspace = await sessionDir({ "notes.txt": "n", "venv/bin/pip": "#!/bin/sh\n" });
+    await chmod(path.join(workspace, "venv/bin/pip"), 0o755);
+    await symlink("/usr/bin/python3", path.join(workspace, "venv/bin/python"));
+    await symlink("../../notes.txt", path.join(workspace, "venv/bin/notes"));
+
+    const strict = new DirectorySessionStore(await temp("store"));
+    await expect(strict.save("thread_1", workspace)).rejects.toThrow("is not a regular file or directory");
+    const store = new DirectorySessionStore(await temp("store"), { links: true });
+    await store.save("thread_1", workspace);
+    const into = await temp("into");
+    expect(await store.restore("thread_1", into)).toBe(true);
+    expect(await readlink(path.join(into, "venv/bin/python"))).toBe("/usr/bin/python3");
+    expect(await readFile(path.join(into, "venv/bin/notes"), "utf8")).toBe("n");
+    expect((await stat(path.join(into, "venv/bin/pip"))).mode & 0o111).not.toBe(0);
+  });
+
+  it("holds a session to its cap", async () => {
+    const store = new DirectorySessionStore(await temp("store"), { maxBytes: 10 });
+    await expect(store.save("thread_1", await sessionDir({ "big": "x".repeat(11) }))).rejects.toThrow("more than 10 bytes");
+  });
+});
 
 describe("DirectorySessionStore", () => {
   it("restores what was saved under a key, and says when nothing was", async () => {

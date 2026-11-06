@@ -477,6 +477,23 @@ The shim `dist/providers/cloud-run/bridge-peer.js` runs in the sandbox under pla
 
 `SessionStore` is `save(key, fromDir)` and `restore(key, intoDir)`. `DirectorySessionStore(rootDir)` keeps one tar per key and replaces it by rename, so it works on a Cloud Storage FUSE volume the job mounts read-write (it needs `tar` on the job's PATH). With `session: { store, key }`, `executeRun` restores the session into a sandbox it builds before the runner starts, and saves it once the runner has exited, whether it finished, failed, timed out or was stopped. A store that cannot be read fails the run rather than letting it start over and then save a shorter session over the thread's. `remoteDir` defaults to `/workspace/.sessions`, where the pi runner keeps its session. `RunOutcome.session` says whether one was restored and whether it was saved. Two runs of the same key that end together both save and the last one wins, so do not run a thread twice at once.
 
+#### Keeping the whole workspace
+
+A sandbox service's pause keeps a sandbox's memory and disk. Nothing runs in a sandbox between runs here (the runner has exited), so keeping its disk is the whole of it: with `remoteDir: "/workspace"`, a thread gets back everything its agent built (a venv, `node_modules`, files it wrote) in a new sandbox on any host, on Cloud Run as on Docker. Leave out what need not come back with `exclude` (paths under `remoteDir`, no wildcards), and raise the 256 MiB cap with `maxBytes`. Have the agent install what it needs inside the workspace, such as a venv there; anything installed elsewhere is gone in the next sandbox.
+
+```ts
+const sessions = new DirectorySessionStore("/sessions", { maxBytes: 2 * 1024 ** 3 });
+
+await executeRun({
+  ...options,
+  session: { store: sessions, key: threadId, remoteDir: "/workspace", stream: true, exclude: ["outputs", ".cache"], maxBytes: 2 * 1024 ** 3 },
+});
+```
+
+`stream: true` moves the workspace as one gzipped tar archive (`gzip: false` for a plain one), made by tar in the old sandbox and unpacked by tar, as the runner's user, in the new one. The job stores the bytes and caps them, and never unpacks them, so nothing the agent put in the workspace, symlinks included, touches the job's file system; the archive lands only in the thread's own next sandbox. Both providers support it (`packDir` and `unpackDir`), as does `DirectorySessionStore` (`saveArchive` and `archive`, written in place and renamed, as a save is); the image needs `tar` and `gzip`. A run asking for it with a provider or store that does not stream fails before it builds a sandbox.
+
+Without `stream`, the session is unpacked on the job and checked first: only directories and regular files, unless both the session and the store are given `links: true`, which keeps symlinks as links, never followed (see `extractPlainTar`). That suits the small `.sessions` directory. A whole workspace is many small files, and checking each one on the job is slow: with 21,000 files (259 MB, a pnpm `node_modules`) on Docker Desktop, a restore took 13 s and a save 28 s unstreamed, against 2.4 s and 6.1 s streamed with gzip (53 MB stored) or 3.4 s and 2.3 s without. A paused Docker sandbox resumes in about 1.4 s, so `keepSandbox` remains the faster path on a single Docker host.
+
 ### A job
 
 ```ts
@@ -526,6 +543,10 @@ Everything a sandbox leaves behind is treated as hostile. `download` runs `tar` 
 ### Testing
 
 `createFakeSandboxCli()` from `./testing` writes an executable that behaves as the real CLI does where a test can tell (it loses exit codes, keeps a command running when killed, records every call), to pass as `sandboxBin`; commands run on the test's host with paths inside binds rewritten, and limits are recorded but not applied. `startFakeUpstream({ apiKey })` is a model endpoint that checks the key and streams its reply as SSE: Messages at its `messagesUrl` (key as `x-api-key`), and Chat Completions under its `baseUrl` (key as a bearer token), or answers with JSON when the request does not ask to stream. `refuse` answers a request with a status, headers and body of the test's choosing, and `headerDelayMs` holds every response back, for testing a client's errors and timeouts.
+
+## Upgrading from 0.12
+
+Nothing changes unless you ask for it: a session can now keep the whole workspace (see [Keeping the whole workspace](#keeping-the-whole-workspace)), with `stream`, `gzip`, `exclude`, `links` and `maxBytes` in `executeRun`'s `session`, and `links` and `maxBytes` in `DirectorySessionStore`'s options. New: `./core`'s `archive.ts` exports (`PACK_SCRIPT`, `UNPACK_SCRIPT`, `packArgs`, `unpackArgs`, `PackOptions`), the optional `SandboxProvider.packDir` and `unpackDir`, the optional `SessionStore.saveArchive` and `archive`, `download`'s optional `links`, and `extractPlainTar`'s and `assertPlainTree`'s optional `links`. A provider or store of a project's own needs no change. Files `extractPlainTar` unpacks keep their executable bit. Restoring a session on Docker now works for an image whose user is not root; it failed to read the staged session before. `session.exclude` entries may not hold wildcards.
 
 ## Upgrading from 0.11
 
