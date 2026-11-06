@@ -21,12 +21,13 @@
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { createWriteStream } from "node:fs";
-import { chmod, mkdir, mkdtemp, open, readFile, rm, truncate } from "node:fs/promises";
+import { createReadStream, createWriteStream } from "node:fs";
+import { chmod, mkdir, mkdtemp, open, readFile, rm, stat, truncate } from "node:fs/promises";
 import { hostname, tmpdir } from "node:os";
 import path from "node:path";
 import type { Duplex } from "node:stream";
 
+import { NO_DIRECTORY, PACK_SCRIPT, packArgs, packed, type PackOptions, UNPACK_SCRIPT, unpackArgs } from "../../core/archive.ts";
 import { extractPlainTar } from "../../core/plain-files.ts";
 import type {
   BindMount,
@@ -305,37 +306,80 @@ export class CloudRunSandboxProvider implements SandboxProvider {
    */
   async download(sandboxId: string, remotePath: string, localPath: string, opts: { links?: boolean } = {}): Promise<void> {
     const max = this.opts.maxDownloadBytes ?? 512 * 1024 * 1024;
-    const marker = newExitMarker();
-    const script = `cd "$(dirname "$1")" && tar -cf - "$(basename "$1")"; code=$?; ${printExitMarker(marker)}`;
     const dir = await mkdtemp(path.join(tmpdir(), "agent-runtime-download-"));
     try {
       const archive = path.join(dir, "download.tar");
-      const { stderr } = await this.cliToFile(
-        this.execArgs(sandboxId, ["/bin/sh", "-c", script, "sh", remotePath], { COPYFILE_DISABLE: "1" }),
-        archive,
-        max + 4096,
-      );
-      // The marker ends the output; read it from the tail and cut it off.
-      const handle = await open(archive, "r");
-      let size: number;
-      let tail: Buffer;
-      try {
-        size = (await handle.stat()).size;
-        const length = Math.min(size, 256);
-        tail = Buffer.alloc(length);
-        await handle.read(tail, 0, length, size - length);
-      } finally {
-        await handle.close();
-      }
-      const { body, code } = splitExitMarker(tail, marker);
+      const script = `cd "$(dirname "$1")" && tar -cf - "$(basename "$1")"`;
+      const { code, stderr } = await this.scriptToFile(sandboxId, script, [remotePath], archive, max);
       if (code !== 0) {
         throw new Error(`Could not download ${remotePath} (${code ?? "no exit code"}): ${stderr.trim()}`);
       }
-      await truncate(archive, size - (tail.length - body.length));
       await extractPlainTar(archive, localPath, max, { links: opts.links });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  }
+
+  /** tar in the sandbox, its output stored in `archive` as it is, never unpacked here. */
+  async packDir(sandboxId: string, remoteDir: string, archive: string, opts: PackOptions): Promise<boolean> {
+    const { code, stderr } = await this.scriptToFile(sandboxId, PACK_SCRIPT, [remoteDir, ...packArgs(opts)], archive, opts.maxBytes);
+    if (code === NO_DIRECTORY) return false;
+    if (!packed(code)) throw new Error(`Packing ${remoteDir} exited ${code ?? "with no exit code"}: ${stderr.trim()}`);
+    return true;
+  }
+
+  /** `archive` into tar in the sandbox over `sandbox exec`'s stdin, as upload does. */
+  async unpackDir(sandboxId: string, archive: string, remoteDir: string, opts: { gzip?: boolean }): Promise<void> {
+    const marker = newExitMarker();
+    const script = `(${UNPACK_SCRIPT}); code=$?; ${printExitMarker(marker)}`;
+    const result = await this.cli(this.execArgs(sandboxId, ["/bin/sh", "-c", script, "sh", remoteDir, ...unpackArgs(opts)]), {
+      input: createReadStream(archive),
+      check: false,
+    });
+    const code = splitExitMarker(result.stdout, marker).code;
+    if (code !== 0) {
+      throw new Error(`Unpacking into ${remoteDir} exited ${code ?? "with no exit code"}: ${result.stderr.trim()}`);
+    }
+  }
+
+  /**
+   * Runs `script` with `args` in the sandbox, its stdout going to the new file
+   * `file` up to `maxBytes`, and returns its exit code, which `sandbox exec`
+   * would lose: a marker printed after the output carries it, and is cut off.
+   */
+  private async scriptToFile(
+    sandboxId: string,
+    script: string,
+    args: string[],
+    file: string,
+    maxBytes: number,
+  ): Promise<{ code: number | null; stderr: string }> {
+    const marker = newExitMarker();
+    const { stderr } = await this.cliToFile(
+      this.execArgs(sandboxId, // A subshell, so a script that exits still gets its marker printed.
+      ["/bin/sh", "-c", `(${script}); code=$?; ${printExitMarker(marker)}`, "sh", ...args], {
+        COPYFILE_DISABLE: "1",
+      }),
+      file,
+      // Room for the marker.
+      maxBytes + 4096,
+      maxBytes,
+    );
+    const handle = await open(file, "r");
+    let size: number;
+    let tail: Buffer;
+    try {
+      size = (await handle.stat()).size;
+      const length = Math.min(size, 256);
+      tail = Buffer.alloc(length);
+      await handle.read(tail, 0, length, size - length);
+    } finally {
+      await handle.close();
+    }
+    const { body, code } = splitExitMarker(tail, marker);
+    await truncate(file, size - (tail.length - body.length));
+    if ((await stat(file)).size > maxBytes) throw new Error(`The output is larger than ${maxBytes} bytes`);
+    return { code, stderr };
   }
 
   exec(sandboxId: string, command: string[], opts: ExecOptions = {}): ExecHandle {
@@ -635,8 +679,8 @@ export class CloudRunSandboxProvider implements SandboxProvider {
     });
   }
 
-  /** Runs the CLI with its stdout going to `file`, killing it past `maxBytes`. */
-  private cliToFile(args: string[], file: string, maxBytes: number): Promise<{ stderr: string }> {
+  /** Runs the CLI with its stdout going to `file`, killing it past `maxBytes`, reported as `reportedMax`. */
+  private cliToFile(args: string[], file: string, maxBytes: number, reportedMax = maxBytes): Promise<{ stderr: string }> {
     return new Promise((resolve, reject) => {
       const child = spawn(this.bin, args, { stdio: ["ignore", "pipe", "pipe"], env: this.cliEnvironment() });
       const out = createWriteStream(file, { flags: "wx" });
@@ -665,7 +709,7 @@ export class CloudRunSandboxProvider implements SandboxProvider {
         written.then(
           () =>
             overflow
-              ? reject(new Error(`The download is larger than ${maxBytes} bytes`))
+              ? reject(new Error(`The output is larger than ${reportedMax} bytes`))
               : resolve({ stderr }),
           reject,
         );

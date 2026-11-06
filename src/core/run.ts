@@ -84,8 +84,19 @@ export type SessionOptions = {
    * run already copies out, or `.cache`.
    */
   exclude?: readonly string[];
-  /** The most a saved session may hold. Default 256 MiB. */
+  /** The most a saved session may hold; with `stream`, the archive. Default 256 MiB. */
   maxBytes?: number;
+  /**
+   * Move the session as one tar archive, packed and unpacked by tar inside
+   * the sandboxes and never unpacked on the job, which only stores the bytes.
+   * Much faster for a large directory, and it keeps whatever the directory
+   * holds (`links` does not apply). Needs a provider with `packDir` and
+   * `unpackDir`, a store with `saveArchive` and `archive`, and tar (and gzip)
+   * in the image.
+   */
+  stream?: boolean;
+  /** With `stream`, gzip the archive. Default true. */
+  gzip?: boolean;
 };
 
 export type EventSink = {
@@ -255,6 +266,12 @@ async function restoreSession(
   sandboxId: string,
   session: SessionOptions,
 ): Promise<boolean> {
+  if (session.stream) {
+    const archive = await session.store.archive!(session.key, { gzip: session.gzip ?? true });
+    if (!archive) return false;
+    await provider.unpackDir!(sandboxId, archive, session.remoteDir ?? SESSION_DIR, { gzip: session.gzip ?? true });
+    return true;
+  }
   const local = await mkdtemp(path.join(tmpdir(), "agent-runtime-session-"));
   try {
     if (!(await session.store.restore(session.key, local))) return false;
@@ -280,7 +297,8 @@ async function restoreSession(
 function excludedParts(exclude: readonly string[]): string[][] {
   return exclude.map((entry) => {
     const parts = entry.split("/").filter((part) => part !== "" && part !== ".");
-    if (entry.startsWith("/") || parts.length === 0 || parts.includes("..")) {
+    // No wildcards either: with `stream` the entry becomes a tar pattern.
+    if (entry.startsWith("/") || parts.length === 0 || parts.includes("..") || /[*?[\\]/.test(entry)) {
       throw new Error(`session.exclude must name paths inside the session directory, not ${JSON.stringify(entry)}`);
     }
     return parts;
@@ -310,6 +328,24 @@ async function saveSession(
   log: (message: string) => void,
 ): Promise<boolean> {
   const remoteDir = session.remoteDir ?? SESSION_DIR;
+  if (session.stream) {
+    try {
+      const gzip = session.gzip ?? true;
+      const exclude = excludedParts(session.exclude ?? []).map((parts) => parts.join("/"));
+      const maxBytes = session.maxBytes ?? MAX_OUTPUT_BYTES;
+      const saved = await session.store.saveArchive!(
+        session.key,
+        (file) => provider.packDir!(sandboxId, remoteDir, file, { exclude, gzip, maxBytes }),
+        { gzip },
+      );
+      // A runner that failed before it made the directory: the stored one stays.
+      if (!saved) log(`no session to save at ${remoteDir}`);
+      return saved;
+    } catch (cause) {
+      log(`could not save the session: ${String(cause)}`);
+      return false;
+    }
+  }
   const local = await mkdtemp(path.join(tmpdir(), "agent-runtime-session-"));
   try {
     try {
@@ -345,8 +381,14 @@ export async function executeRun(opts: ExecuteRunOptions): Promise<RunOutcome> {
   const batchEvents = opts.batchEvents ?? BATCH_EVENTS;
   const retries = opts.retries ?? RETRIES;
   const retryMs = opts.retryMs ?? RETRY_MS;
-  // A bad exclude would otherwise surface only when the session is saved.
+  // Either would otherwise surface only when the session is saved.
   excludedParts(opts.session?.exclude ?? []);
+  if (opts.session?.stream) {
+    const { store } = opts.session;
+    if (!provider.packDir || !provider.unpackDir || !store.saveArchive || !store.archive) {
+      throw new Error("session.stream needs a provider with packDir and unpackDir and a store with saveArchive and archive");
+    }
+  }
 
   // Stopped before it began, as a job shut down between its claim and its
   // work is: nothing is built, resumed or started, and nothing is written.

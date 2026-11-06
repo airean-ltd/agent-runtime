@@ -208,6 +208,35 @@ describe("CloudRunSandboxProvider", { timeout: 30_000 }, () => {
     expect(await readFile(path.join(out, "ws/a"), "utf8")).toBe("x\n");
   });
 
+  it("packs a directory into an archive the job keeps whole, and unpacks it into another sandbox", async () => {
+    const p = provider();
+    const one = await p.create({ image: "", limits: LIMITS });
+    const made = await run(p, one, [
+      "sh",
+      "-c",
+      "mkdir -p /workspace/ws/bin /workspace/ws/outputs && ln -s /usr/bin/python3 /workspace/ws/bin/python && printf '#!/bin/sh\\n' > /workspace/ws/bin/tool && chmod 755 /workspace/ws/bin/tool && echo o > /workspace/ws/outputs/o && echo n > /workspace/ws/notes",
+    ]);
+    expect(made.code).toBe(0);
+    const dir = await mkdtemp(path.join(tmpdir(), "agent-runtime-pack-"));
+    const archive = path.join(dir, "ws.tar.gz");
+    expect(await p.packDir(one, "/workspace/ws", archive, { exclude: ["outputs"], gzip: true, maxBytes: 1024 * 1024 })).toBe(true);
+    expect(await p.packDir(one, "/workspace/missing", path.join(dir, "none"), { maxBytes: 1024 })).toBe(false);
+    await expect(p.packDir(one, "/workspace/ws", path.join(dir, "small"), { maxBytes: 10 })).rejects.toThrow("larger than 10 bytes");
+
+    const two = await p.create({ image: "", limits: LIMITS });
+    await p.unpackDir(two, archive, "/workspace/restored", { gzip: true });
+    const restored = path.join(cli.stateDir, two, "workspace", "restored");
+    expect(await readlink(path.join(restored, "bin/python"))).toBe("/usr/bin/python3");
+    expect((await stat(path.join(restored, "bin/tool"))).mode & 0o111).not.toBe(0);
+    expect(await readFile(path.join(restored, "notes"), "utf8")).toBe("n\n");
+    await expect(stat(path.join(restored, "outputs"))).rejects.toThrow();
+    const corrupt = path.join(dir, "corrupt.tar.gz");
+    await writeFile(corrupt, Buffer.alloc(2048, 7));
+    await expect(p.unpackDir(two, corrupt, "/workspace/again", { gzip: true })).rejects.toThrow(
+      "Unpacking into /workspace/again exited",
+    );
+  });
+
   it("cannot pause or resume, and forgets a destroyed sandbox", async () => {
     const p = provider();
     const id = await p.create({ image: "", limits: LIMITS });

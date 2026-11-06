@@ -270,3 +270,65 @@ describe("executeRun keeping the whole workspace", () => {
     }
   });
 });
+
+describe("executeRun streaming the session", () => {
+  const files = {
+    "/workspace/notes.txt": "kept\n",
+    "/workspace/.sessions/s.jsonl": '{"turn":1}\n',
+    "/workspace/outputs/chart.png": "png",
+  };
+
+  it("moves the workspace as one archive the job never unpacks, gzipped by default", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "agent-runtime-store-"));
+    const store = new DirectorySessionStore(root);
+    const session = { store, key: "thread_1", remoteDir: "/workspace", stream: true, exclude: ["outputs"] };
+    const first = new FakeSandboxProvider({ ...ANSWER, files });
+    expect((await start(first, store, { session }).outcome).session).toEqual({ restored: false, saved: true });
+    expect(first.calls).toContain("pack /workspace");
+    expect(first.calls.some((c) => c.startsWith("download"))).toBe(false);
+    expect(await readdir(root)).toEqual(["thread_1.tar.gz"]);
+
+    const second = new FakeSandboxProvider(ANSWER);
+    expect((await start(second, store, { session }).outcome).session?.restored).toBe(true);
+    expect(second.calls).toContain("unpack /workspace");
+    expect(second.calls.some((c) => c.startsWith("upload"))).toBe(false);
+    const restored = [...second.fs.keys()].filter((p) => p.startsWith("/workspace/")).sort();
+    expect(restored).toEqual(["/workspace/.sessions/s.jsonl", "/workspace/notes.txt"]);
+  });
+
+  it("keeps the stored archive when the runner left no directory, or the archive is over its cap", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "agent-runtime-store-"));
+    const store = new DirectorySessionStore(root);
+    const session = { store, key: "thread_1", remoteDir: "/workspace", stream: true, gzip: false };
+    await start(new FakeSandboxProvider({ ...ANSWER, files }), store, { session }).outcome;
+    const stored = await readFile(path.join(root, "thread_1.tar"));
+
+    // The runner removed the directory it was given back.
+    const wiped = new FakeSandboxProvider(ANSWER);
+    wiped.unpackDir = async () => {};
+    const empty = await start(wiped, store, { session });
+    expect((await empty.outcome).session?.saved).toBe(false);
+    expect(empty.sink.lines.some((l) => l.startsWith("no session to save at /workspace"))).toBe(true);
+    const big = await start(new FakeSandboxProvider({ ...ANSWER, files: { "/workspace/big": "x".repeat(50_000) } }), store, {
+      // Read back the stored archive first, which is smaller than the cap.
+      session: { ...session, maxBytes: 20_000 },
+    });
+    expect((await big.outcome).session?.saved).toBe(false);
+    expect(big.sink.lines.some((l) => l.includes("more than 20000 bytes"))).toBe(true);
+    expect(await readFile(path.join(root, "thread_1.tar"))).toEqual(stored);
+    expect(await readdir(root)).toEqual(["thread_1.tar"]);
+  });
+
+  it("refuses to start with a store that cannot hold archives, or a wildcard exclude", async () => {
+    const provider = new FakeSandboxProvider(ANSWER);
+    const store = new MemoryStore();
+    await expect(start(provider, store, { session: { store, key: "t", stream: true } }).outcome).rejects.toThrow(
+      "session.stream needs",
+    );
+    const dir = new DirectorySessionStore(await mkdtemp(path.join(tmpdir(), "agent-runtime-store-")));
+    await expect(
+      start(provider, dir, { session: { store: dir, key: "t", stream: true, exclude: ["*.log"] } }).outcome,
+    ).rejects.toThrow("session.exclude must name paths inside");
+    expect(provider.calls).toEqual([]);
+  });
+});

@@ -26,6 +26,15 @@ export interface SessionStore {
    * the store could not be read, so a run does not start over by mistake.
    */
   restore(key: string, into: string): Promise<boolean>;
+  /**
+   * Optional, for executeRun's `session.stream`: stores an archive the job
+   * never unpacks. `write` writes it to the new file it is given and resolves
+   * false when there was nothing to write, which keeps what is stored. A
+   * failed write keeps it too.
+   */
+  saveArchive?(key: string, write: (file: string) => Promise<boolean>, opts: { gzip: boolean }): Promise<boolean>;
+  /** Optional, with `saveArchive`: the file holding the key's archive, or null when there is none yet. */
+  archive?(key: string, opts: { gzip: boolean }): Promise<string | null>;
 }
 
 /** A key as a file name: letters, digits, `.`, `_` and `-` kept, anything else %-encoded. */
@@ -119,6 +128,39 @@ export class DirectorySessionStore implements SessionStore {
       await rm(temp, { force: true }).catch(() => {});
       throw error;
     }
+  }
+
+  /** A plain tar is the same file a directory save writes; gzip adds `.gz`. */
+  archivePath(key: string, opts: { gzip: boolean }): string {
+    return opts.gzip ? `${this.pathFor(key)}.gz` : this.pathFor(key);
+  }
+
+  async saveArchive(key: string, write: (file: string) => Promise<boolean>, opts: { gzip: boolean }): Promise<boolean> {
+    const target = this.archivePath(key, opts);
+    await mkdir(this.rootDir, { recursive: true });
+    // Written in place on the store's volume and renamed over the key's, so a
+    // restore reads one archive or another, never a part of one.
+    const temp = path.join(this.rootDir, `.${path.basename(target)}.${randomBytes(6).toString("hex")}.tmp`);
+    try {
+      if (!(await write(temp))) {
+        await rm(temp, { force: true });
+        return false;
+      }
+      await rename(temp, target);
+      return true;
+    } catch (error) {
+      await rm(temp, { force: true }).catch(() => {});
+      throw error;
+    }
+  }
+
+  async archive(key: string, opts: { gzip: boolean }): Promise<string | null> {
+    const file = this.archivePath(key, opts);
+    const found = await stat(file).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return null;
+      throw error;
+    });
+    return found ? file : null;
   }
 
   async restore(key: string, into: string): Promise<boolean> {
