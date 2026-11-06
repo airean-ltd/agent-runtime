@@ -4,10 +4,23 @@
 //
 //   PROMPT=sleep    waits a minute first, to be cancelled or timed out
 //   PROMPT=exit:N   exits N without finishing, as a crashed runner does
+//   PROMPT=workspace  makes a project in the workspace, or checks the one there
 //   WORKSPACE       default /workspace
 
+import { spawnSync } from "node:child_process";
+import { createHash, randomBytes } from "node:crypto";
 import { lookup } from "node:dns/promises";
-import { appendFileSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  readlinkSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 
 import { createEmitter } from "@eankhbayar/agent-runtime/contract";
 
@@ -25,6 +38,7 @@ const turns = (() => {
 emit("run_started", { runId: process.env.RUN_ID, turns });
 appendFileSync(`${sessions}/turns.jsonl`, `${JSON.stringify({ prompt, at: new Date().toISOString() })}\n`);
 
+const sha = (file) => createHash("sha256").update(readFileSync(file)).digest("hex");
 const reach = async (url) => {
   try {
     const res = await fetch(url, { headers: { "Metadata-Flavor": "Google" }, signal: AbortSignal.timeout(4000) });
@@ -59,6 +73,35 @@ emit("notice", {
   })(),
   limits,
 });
+
+if (prompt === "workspace") {
+  // A workspace as a project keeps one: an executable, links like a venv's
+  // and node_modules/.bin's, and a large file. The first run makes it; a
+  // later one, in a new sandbox, finds it as it was.
+  const project = `${process.env.WORKSPACE ?? "/workspace"}/project`;
+  const marker = `${project}/made.json`;
+  if (!existsSync(marker)) {
+    mkdirSync(`${project}/bin`, { recursive: true });
+    mkdirSync(`${project}/node_modules/.bin`, { recursive: true });
+    writeFileSync(`${project}/bin/tool.sh`, "#!/bin/sh\necho tool ran\n", { mode: 0o755 });
+    symlinkSync("../../bin/tool.sh", `${project}/node_modules/.bin/tool`);
+    symlinkSync("/usr/bin/env", `${project}/python`);
+    writeFileSync(`${project}/big.bin`, randomBytes(20 * 1024 * 1024));
+    writeFileSync(marker, JSON.stringify({ sha: sha(`${project}/big.bin`) }));
+    emit("notice", { kind: "workspace", made: true });
+  } else {
+    const tool = spawnSync(`${project}/node_modules/.bin/tool`, { encoding: "utf8" });
+    emit("notice", {
+      kind: "workspace",
+      made: false,
+      toolRan: tool.stdout?.trim() ?? String(tool.error),
+      links: [`${project}/node_modules/.bin/tool`, `${project}/python`].map((l) =>
+        lstatSync(l).isSymbolicLink() ? readlinkSync(l) : "not a link",
+      ),
+      bigIntact: JSON.parse(readFileSync(marker, "utf8")).sha === sha(`${project}/big.bin`),
+    });
+  }
+}
 
 if (prompt === "sleep") await new Promise((resolve) => setTimeout(resolve, 60_000));
 const exit = /^exit:(\d+)$/.exec(prompt);

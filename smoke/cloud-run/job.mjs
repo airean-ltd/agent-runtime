@@ -1,7 +1,8 @@
 // The smoke test's job: one Cloud Run Job execution with --sandbox-launcher
 // running executeRun + CloudRunSandboxProvider + the stdio bridge + the
 // in-process gateway, against a fake model served inside the job, with a
-// DirectorySessionStore on the job's Cloud Storage volume. Prints one
+// DirectorySessionStore on the job's Cloud Storage volume, which also keeps a
+// whole workspace, streamed and with its links. Prints one
 // `SMOKE {json}` line per check and `SMOKE-END` last.
 //
 //   SMOKE_PHASE         "first" (every check) or "second" (one run, to show the
@@ -12,6 +13,8 @@
 //
 // SMOKE_SANDBOX_BIN, SMOKE_STATE_DIR, SMOKE_RUNNER and SMOKE_BRIDGE_PORT
 // let it run on a laptop against the fake CLI from ./testing.
+
+import { stat } from "node:fs/promises";
 
 import { createInProcessGateway, DirectorySessionStore, executeRun } from "@eankhbayar/agent-runtime/core";
 import { CloudRunSandboxProvider } from "@eankhbayar/agent-runtime/providers/cloud-run";
@@ -88,6 +91,37 @@ function run(label, prompt, overrides = {}) {
     ...overrides,
   }).then((o) => ({ ...o, ms: Date.now() - started }));
   return { outcome, events };
+}
+
+// The whole workspace, kept between sandboxes: streamed as one archive, or
+// downloaded with its links.
+const workspaceStore = new DirectorySessionStore(process.env.SMOKE_SESSIONS_DIR ?? "/sessions/agent-runtime-smoke", {
+  links: true,
+});
+const workspaceSession = (mode) => ({
+  store: workspaceStore,
+  key: `${key}-workspace-${mode}`,
+  remoteDir: "/workspace",
+  ...(mode === "stream" ? { stream: true } : { links: true }),
+});
+
+/** Runs PROMPT=workspace against the mode's stored workspace and records what the runner found. */
+async function workspaceRun(check, mode, label) {
+  const { outcome, events } = run(label, "workspace", { session: workspaceSession(mode) });
+  const o = await outcome;
+  const found = notice(events, "workspace");
+  const archive = await stat(
+    mode === "stream" ? workspaceStore.archivePath(workspaceSession(mode).key, { gzip: true }) : workspaceStore.pathFor(workspaceSession(mode).key),
+  ).catch(() => null);
+  const ok =
+    o.status === "succeeded" &&
+    o.session?.saved === true &&
+    (found?.made === true ||
+      (o.session.restored === true &&
+        found?.toolRan === "tool ran" &&
+        found.links?.join(" ") === "../../bin/tool.sh /usr/bin/env" &&
+        found.bigIntact === true));
+  record(check, ok, { status: o.status, error: o.error, session: o.session, found, archiveBytes: archive?.size, ms: o.ms });
 }
 
 const notice = (events, kind) => events.find((e) => e.type === "notice" && e.payload.kind === kind)?.payload;
@@ -225,7 +259,19 @@ if (phase === "first") {
     const o = await outcome;
     record("run.crash", o.status === "failed" && /exiting 3/.test(o.error ?? ""), { status: o.status, error: o.error });
   });
+
+  for (const mode of ["stream", "links"]) {
+    await step(`workspace.${mode}.make`, () => workspaceRun(`workspace.${mode}.make`, mode, `workspace-${mode}-make`));
+    await step(`workspace.${mode}.restored`, () =>
+      workspaceRun(`workspace.${mode}.restored`, mode, `workspace-${mode}-check`),
+    );
+  }
 } else {
+  for (const mode of ["stream", "links"]) {
+    await step(`workspace.${mode}.next-execution`, () =>
+      workspaceRun(`workspace.${mode}.next-execution`, mode, `workspace-${mode}-next`),
+    );
+  }
   await step("run.next-execution", async () => {
     const { outcome, events } = run("next", "a question from the next execution");
     const o = await outcome;
