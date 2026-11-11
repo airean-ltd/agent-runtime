@@ -1,6 +1,6 @@
 {
   "name": "@eankhbayar/agent-runtime",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "description": "Runtimes for sandboxed coding agents: the run-event contract, executeRun and the store interfaces, pipeline run events, a shared model client, a job harness and Cloud Run dispatch, Docker and Cloud Run sandbox providers, the egress gateway with project data commands and the agent-data CLI, and the in-sandbox runners of the pi runtime and the experimental pi-durable one.",
   "license": "UNLICENSED",
   "private": true,
@@ -69,10 +69,10 @@
     "release": "node scripts/release.mjs"
   },
   "peerDependencies": {
-    "@earendil-works/chord": "1.5.0",
+    "@earendil-works/chord": "1.5.1",
     "@earendil-works/pi-coding-agent": ">=0.85.1 <2",
-    "@earendil-works/pi-durable": "1.5.0",
-    "@earendil-works/pi-schema": "1.5.0",
+    "@earendil-works/pi-durable": "1.5.1",
+    "@earendil-works/pi-schema": "1.5.1",
     "typebox": "^1.3.30"
   },
   "peerDependenciesMeta": {
@@ -93,13 +93,13 @@
     }
   },
   "devDependencies": {
-    "@ai-sdk/anthropic": "4.0.59",
-    "@ai-sdk/openai": "4.0.72",
-    "@ai-sdk/openai-compatible": "3.0.51",
-    "@earendil-works/chord": "1.5.0",
-    "@earendil-works/pi-coding-agent": "1.5.0",
-    "@earendil-works/pi-durable": "1.5.0",
-    "@earendil-works/pi-schema": "1.5.0",
+    "@ai-sdk/anthropic": "4.0.99",
+    "@ai-sdk/openai": "4.0.111",
+    "@ai-sdk/openai-compatible": "3.0.87",
+    "@earendil-works/chord": "1.5.1",
+    "@earendil-works/pi-coding-agent": "1.5.1",
+    "@earendil-works/pi-durable": "1.5.1",
+    "@earendil-works/pi-schema": "1.5.1",
     "@types/node": "^24",
     "typebox": "^1.3.30",
     "typescript": "^7.0.2",
