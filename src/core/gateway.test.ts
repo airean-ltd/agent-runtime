@@ -220,7 +220,11 @@ describe("createInProcessGateway with an OpenAI-format upstream", () => {
     // Five words 80 ms apart: buffered, they would all land together at the end.
     expect(answer.arrivals).toHaveLength(5);
     expect(answer.arrivals.at(-1)! - answer.arrivals[0]!).toBeGreaterThan(200);
-    expect(entries.at(-1)).toMatchObject({ runId: "run_1", path: "/v1/chat/completions", status: 200 });
+    expect(entries.at(-1)).toMatchObject({
+      runId: "run_1",
+      path: "/v1/chat/completions",
+      status: 200,
+    });
     expect(JSON.stringify(entries)).not.toContain(token);
     expect(JSON.stringify(entries)).not.toContain("sk-provider");
   });
@@ -240,7 +244,10 @@ describe("createInProcessGateway with an OpenAI-format upstream", () => {
       { authorization: `Bearer ${revoked}` },
     ];
     for (const headers of attempts) {
-      expect(await chat(url, headers)).toMatchObject({ status: 401, body: '{"error":"invalid_run_token"}' });
+      expect(await chat(url, headers)).toMatchObject({
+        status: 401,
+        body: '{"error":"invalid_run_token"}',
+      });
     }
     expect(upstream.requests).toEqual([]);
     expect(JSON.stringify(entries)).not.toContain(token);
@@ -250,10 +257,22 @@ describe("createInProcessGateway with an OpenAI-format upstream", () => {
     const { upstream, gateway, url } = await setup(0, "openai");
     const token = await gateway.grant("run_1", 60_000);
     const bearer = { authorization: `Bearer ${token}` };
-    const whole = await post({ url }, "/v1/chat/completions", bearer, '{"model":"m","messages":[]}');
+    const whole = await post(
+      { url },
+      "/v1/chat/completions",
+      bearer,
+      '{"model":"m","messages":[]}',
+    );
     expect(whole.status).toBe(200);
-    expect(JSON.parse(whole.body)).toMatchObject({ choices: [{ message: { content: "Hello from the fake model." } }] });
-    for (const pathName of ["/v1/messages", "/v1/messages/count_tokens", "/v1/completions", "/chat/completions"]) {
+    expect(JSON.parse(whole.body)).toMatchObject({
+      choices: [{ message: { content: "Hello from the fake model." } }],
+    });
+    for (const pathName of [
+      "/v1/messages",
+      "/v1/messages/count_tokens",
+      "/v1/completions",
+      "/chat/completions",
+    ]) {
       expect((await post({ url }, pathName, bearer)).status).toBe(404);
     }
     expect(upstream.requests).toHaveLength(1);
@@ -351,14 +370,17 @@ describe("the gateway image's server", { timeout: 30_000 }, () => {
       UPSTREAM_API_KEY: "sk-provider",
     });
     try {
-      expect(JSON.parse(listening)).toMatchObject({ format: "anthropic", upstream: upstream.messagesUrl });
+      expect(JSON.parse(listening)).toMatchObject({
+        format: "anthropic",
+        upstream: upstream.messagesUrl,
+      });
       const answer = await post({ url }, "/v1/messages", { "x-api-key": token });
       expect(answer.status).toBe(200);
       expect(answer.body).toContain("event: message_stop");
       expect(upstream.requests[0]!.headers["x-api-key"]).toBe("sk-provider");
-      expect((await post({ url }, "/v1/messages", { "x-api-key": `rt_${"u".repeat(43)}` })).status).toBe(
-        401,
-      );
+      expect(
+        (await post({ url }, "/v1/messages", { "x-api-key": `rt_${"u".repeat(43)}` })).status,
+      ).toBe(401);
     } finally {
       server.kill();
     }
@@ -374,7 +396,9 @@ describe("the gateway image's server", { timeout: 30_000 }, () => {
     try {
       expect(listening).not.toContain("sk-provider");
       expect(JSON.parse(listening)).toMatchObject({ format: "openai", upstream: upstream.baseUrl });
-      const answer = await post({ url }, "/v1/chat/completions", { authorization: `Bearer ${token}` });
+      const answer = await post({ url }, "/v1/chat/completions", {
+        authorization: `Bearer ${token}`,
+      });
       expect(answer.status).toBe(200);
       expect(answer.body).toContain("data: [DONE]");
       expect(upstream.requests[0]!.headers.authorization).toBe("Bearer sk-provider");
@@ -387,8 +411,16 @@ describe("the gateway image's server", { timeout: 30_000 }, () => {
   it("refuses to start without the upstream its format needs", async () => {
     for (const env of [
       { UPSTREAM_API_KEY: "sk-provider" },
-      { UPSTREAM_API_KEY: "sk-provider", UPSTREAM_FORMAT: "openai", UPSTREAM_MESSAGES_URL: "http://x/v1/messages" },
-      { UPSTREAM_API_KEY: "sk-provider", UPSTREAM_FORMAT: "gemini", UPSTREAM_BASE_URL: "http://x/v1" },
+      {
+        UPSTREAM_API_KEY: "sk-provider",
+        UPSTREAM_FORMAT: "openai",
+        UPSTREAM_MESSAGES_URL: "http://x/v1/messages",
+      },
+      {
+        UPSTREAM_API_KEY: "sk-provider",
+        UPSTREAM_FORMAT: "gemini",
+        UPSTREAM_BASE_URL: "http://x/v1",
+      },
       { UPSTREAM_FORMAT: "openai", UPSTREAM_BASE_URL: "http://x/v1" },
     ]) {
       const server = spawn(process.execPath, [path.join(repo, "gateway/server.ts")], {

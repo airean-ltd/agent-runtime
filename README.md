@@ -25,10 +25,10 @@ infra/cloud-run/        scripts that set up Convex's federation and deploy a Clo
 Releases are git tags that carry their built `dist/`. The repo is public, so installing one needs no credentials:
 
 ```json
-{ "dependencies": { "@eankhbayar/agent-runtime": "github:eankhbayar/agent-runtime#v0.9.0" } }
+{ "dependencies": { "@eankhbayar/agent-runtime": "github:airean-ltd/agent-runtime#v0.15.0" } }
 ```
 
-`@earendil-works/pi-coding-agent` and `typebox` are peer dependencies, needed only where `./pi/runner` is imported. `./models` needs no AI SDK package; an app that wants an AI SDK model passes in the factories it already imports (see [Models](#models)).
+`@earendil-works/pi-coding-agent` and `typebox` are peer dependencies, needed only where `./pi/runner` is imported. The ranges are `>=0.85.1 <2` for pi and `^1.3.30` for typebox, which takes in 1.4; the tests run against typebox 1.4. `./models` needs no AI SDK package; an app that wants an AI SDK model passes in the factories it already imports (see [Models](#models)).
 
 ## In the sandbox
 
@@ -572,7 +572,11 @@ How it differs from `runAgent`:
 
 The session survives only what `executeRun` saves. That is everything up to the moment the runner exits, including a crash or kill of the runner inside the sandbox. It does not cover the sandbox or the job dying first, since nothing then copies the file out; checkpoints that outlive the sandbox need a pi-durable storage outside it, which this package does not have yet. As with the pi runner, each attempt numbers its events from 0, so a store that keeps one log per run across attempts must offset them.
 
-Install `@earendil-works/pi-durable`, `@earendil-works/chord` and `@earendil-works/pi-schema` at exactly 1.5.0 beside `@earendil-works/pi-coding-agent` 1.5.0 in the sandbox's `package.json`. pi-durable is experimental and changes its API between releases (1.5.0 removed the event stream 1.0 shipped with), so this runner is built against one version at a time.
+Install `@earendil-works/pi-durable`, `@earendil-works/chord` and `@earendil-works/pi-schema` at exactly 1.5.1 beside `@earendil-works/pi-coding-agent` 1.5.1 in the sandbox's `package.json`. pi-durable is experimental and changes its API between releases (1.5.0 removed the event stream 1.0 shipped with), so this runner is built against one version at a time.
+
+## Upgrading from 0.14
+
+Nothing in this package's API changes. If you use `./pi-durable/runner`, move `@earendil-works/pi-durable`, `@earendil-works/chord` and `@earendil-works/pi-schema` to exactly 1.5.1 in the sandbox's `package.json`: they are exact peer versions, and this release is built and tested against 1.5.1. The pi runtime's peer range is still `>=0.85.1 <2`, so an image on pi 1.5.0 or 0.85 needs no change.
 
 ## Upgrading from 0.13
 
@@ -647,5 +651,6 @@ pi/dispatcher   -> core               executeRun, EventSink, SinkState, LIVE, To
 
 ```bash
 pnpm ready      # typecheck, test, build
-pnpm release    # tag v<version> with dist/ and push
 ```
+
+To release, bump `version` in `package.json` in the PR. When it merges, the Release workflow runs `pnpm ready`, tags `v<version>` with its built `dist/` and pushes the tag. A merge that leaves the version alone releases nothing, so two version bumps merged one after the other each get their tag. `pnpm release` does the same from a clean `main` on your machine, should the workflow be down.

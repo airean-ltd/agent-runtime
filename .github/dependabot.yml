@@ -1,0 +1,20 @@
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      # The pi packages release together, and three of them are exact peer
+      # versions here: move their peerDependencies and the README's
+      # pi-durable section in the same PR, with a version bump.
+      pi:
+        patterns: ["@earendil-works/*"]
+      ai-sdk:
+        patterns: ["@ai-sdk/*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

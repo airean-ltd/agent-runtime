@@ -20,8 +20,7 @@ export function createDurableSaveOutputTool(opts: {
   return defineTool({
     name: "save_output",
     description:
-      opts.description ??
-      `Register a file you wrote under ${outputsDir} as a result for the user.`,
+      opts.description ?? `Register a file you wrote under ${outputsDir} as a result for the user.`,
     parameters: obj({
       path: str({ description: `Path of the file, inside ${outputsDir}` }),
       kind: oneOf(opts.kinds),

@@ -27,7 +27,15 @@ import { hostname, tmpdir } from "node:os";
 import path from "node:path";
 import type { Duplex } from "node:stream";
 
-import { NO_DIRECTORY, PACK_SCRIPT, packArgs, packed, type PackOptions, UNPACK_SCRIPT, unpackArgs } from "../../core/archive.ts";
+import {
+  NO_DIRECTORY,
+  PACK_SCRIPT,
+  packArgs,
+  packed,
+  type PackOptions,
+  UNPACK_SCRIPT,
+  unpackArgs,
+} from "../../core/archive.ts";
 import { extractPlainTar } from "../../core/plain-files.ts";
 import type {
   BindMount,
@@ -40,7 +48,12 @@ import type {
 } from "../../core/sandbox-provider.ts";
 
 import { startBridge, type Bridge, type BridgeProcess } from "./bridge.ts";
-import { ExitMarkerReader, newExitMarker, printExitMarker, splitExitMarker } from "./exit-marker.ts";
+import {
+  ExitMarkerReader,
+  newExitMarker,
+  printExitMarker,
+  splitExitMarker,
+} from "./exit-marker.ts";
 
 export const SANDBOX_BIN = "/usr/local/gcp/bin/sandbox";
 
@@ -160,17 +173,24 @@ function mountSpec(bind: Bind): string {
  * The FUSE mounts (a Cloud Storage volume is one) in a `/proc/self/mounts`
  * table that no path in `covered` contains, with their filesystem types.
  */
-export function uncoveredFuseMounts(table: string, covered: readonly string[]): { point: string; type: string }[] {
-  return table
-    .split("\n")
-    .map((line) => line.split(" "))
-    // fuse or fuse.<name> (gcsfuse); not fusectl, the control filesystem.
-    .filter(([, , type]) => type === "fuse" || type?.startsWith("fuse."))
-    .map(([, point, type]) => ({
-      point: point!.replace(/\\([0-7]{3})/g, (_, code: string) => String.fromCharCode(Number.parseInt(code, 8))),
-      type: type!,
-    }))
-    .filter(({ point }) => !covered.some((dir) => isWithin(dir, point)));
+export function uncoveredFuseMounts(
+  table: string,
+  covered: readonly string[],
+): { point: string; type: string }[] {
+  return (
+    table
+      .split("\n")
+      .map((line) => line.split(" "))
+      // fuse or fuse.<name> (gcsfuse); not fusectl, the control filesystem.
+      .filter(([, , type]) => type === "fuse" || type?.startsWith("fuse."))
+      .map(([, point, type]) => ({
+        point: point!.replace(/\\([0-7]{3})/g, (_, code: string) =>
+          String.fromCharCode(Number.parseInt(code, 8)),
+        ),
+        type: type!,
+      }))
+      .filter(({ point }) => !covered.some((dir) => isWithin(dir, point)))
+  );
 }
 
 /** The mount points `uncoveredFuseMounts` finds. */
@@ -278,7 +298,9 @@ export class CloudRunSandboxProvider implements SandboxProvider {
       env: { ...this.cliEnvironment(), COPYFILE_DISABLE: "1" },
     });
     let packError = "";
-    packed.stderr.setEncoding("utf8").on("data", (d: string) => (packError = `${packError}${d}`.slice(-2_000)));
+    packed.stderr
+      .setEncoding("utf8")
+      .on("data", (d: string) => (packError = `${packError}${d}`.slice(-2_000)));
     const packedExit = new Promise<number | null>((resolve) => {
       packed.on("error", (error) => {
         packError += String(error);
@@ -286,15 +308,21 @@ export class CloudRunSandboxProvider implements SandboxProvider {
       });
       packed.on("close", (code) => resolve(code));
     });
-    const result = await this.cli(this.execArgs(sandboxId, ["/bin/sh", "-c", script, "sh", remoteDir]), {
-      input: packed.stdout,
-      check: false,
-    });
+    const result = await this.cli(
+      this.execArgs(sandboxId, ["/bin/sh", "-c", script, "sh", remoteDir]),
+      {
+        input: packed.stdout,
+        check: false,
+      },
+    );
     const packedCode = await packedExit;
-    if (packedCode !== 0) throw new Error(`Could not pack ${localDir} (${packedCode}): ${packError.trim()}`);
+    if (packedCode !== 0)
+      throw new Error(`Could not pack ${localDir} (${packedCode}): ${packError.trim()}`);
     const code = splitExitMarker(result.stdout, marker).code;
     if (code !== 0) {
-      throw new Error(`Could not upload ${localDir} to ${remoteDir} (${code ?? "no exit code"}): ${result.stderr.trim()}`);
+      throw new Error(
+        `Could not upload ${localDir} to ${remoteDir} (${code ?? "no exit code"}): ${result.stderr.trim()}`,
+      );
     }
   }
 
@@ -304,15 +332,28 @@ export class CloudRunSandboxProvider implements SandboxProvider {
    * and unpacked here as directories and regular files only, or with `links`
    * symlinks too, made as links and never followed (see plain-files.ts).
    */
-  async download(sandboxId: string, remotePath: string, localPath: string, opts: { links?: boolean } = {}): Promise<void> {
+  async download(
+    sandboxId: string,
+    remotePath: string,
+    localPath: string,
+    opts: { links?: boolean } = {},
+  ): Promise<void> {
     const max = this.opts.maxDownloadBytes ?? 512 * 1024 * 1024;
     const dir = await mkdtemp(path.join(tmpdir(), "agent-runtime-download-"));
     try {
       const archive = path.join(dir, "download.tar");
       const script = `cd "$(dirname "$1")" && tar -cf - "$(basename "$1")"`;
-      const { code, stderr } = await this.scriptToFile(sandboxId, script, [remotePath], archive, max);
+      const { code, stderr } = await this.scriptToFile(
+        sandboxId,
+        script,
+        [remotePath],
+        archive,
+        max,
+      );
       if (code !== 0) {
-        throw new Error(`Could not download ${remotePath} (${code ?? "no exit code"}): ${stderr.trim()}`);
+        throw new Error(
+          `Could not download ${remotePath} (${code ?? "no exit code"}): ${stderr.trim()}`,
+        );
       }
       await extractPlainTar(archive, localPath, max, { links: opts.links });
     } finally {
@@ -321,24 +362,48 @@ export class CloudRunSandboxProvider implements SandboxProvider {
   }
 
   /** tar in the sandbox, its output stored in `archive` as it is, never unpacked here. */
-  async packDir(sandboxId: string, remoteDir: string, archive: string, opts: PackOptions): Promise<boolean> {
-    const { code, stderr } = await this.scriptToFile(sandboxId, PACK_SCRIPT, [remoteDir, ...packArgs(opts)], archive, opts.maxBytes);
+  async packDir(
+    sandboxId: string,
+    remoteDir: string,
+    archive: string,
+    opts: PackOptions,
+  ): Promise<boolean> {
+    const { code, stderr } = await this.scriptToFile(
+      sandboxId,
+      PACK_SCRIPT,
+      [remoteDir, ...packArgs(opts)],
+      archive,
+      opts.maxBytes,
+    );
     if (code === NO_DIRECTORY) return false;
-    if (!packed(code)) throw new Error(`Packing ${remoteDir} exited ${code ?? "with no exit code"}: ${stderr.trim()}`);
+    if (!packed(code))
+      throw new Error(
+        `Packing ${remoteDir} exited ${code ?? "with no exit code"}: ${stderr.trim()}`,
+      );
     return true;
   }
 
   /** `archive` into tar in the sandbox over `sandbox exec`'s stdin, as upload does. */
-  async unpackDir(sandboxId: string, archive: string, remoteDir: string, opts: { gzip?: boolean }): Promise<void> {
+  async unpackDir(
+    sandboxId: string,
+    archive: string,
+    remoteDir: string,
+    opts: { gzip?: boolean },
+  ): Promise<void> {
     const marker = newExitMarker();
     const script = `(${UNPACK_SCRIPT}); code=$?; ${printExitMarker(marker)}`;
-    const result = await this.cli(this.execArgs(sandboxId, ["/bin/sh", "-c", script, "sh", remoteDir, ...unpackArgs(opts)]), {
-      input: createReadStream(archive),
-      check: false,
-    });
+    const result = await this.cli(
+      this.execArgs(sandboxId, ["/bin/sh", "-c", script, "sh", remoteDir, ...unpackArgs(opts)]),
+      {
+        input: createReadStream(archive),
+        check: false,
+      },
+    );
     const code = splitExitMarker(result.stdout, marker).code;
     if (code !== 0) {
-      throw new Error(`Unpacking into ${remoteDir} exited ${code ?? "with no exit code"}: ${result.stderr.trim()}`);
+      throw new Error(
+        `Unpacking into ${remoteDir} exited ${code ?? "with no exit code"}: ${result.stderr.trim()}`,
+      );
     }
   }
 
@@ -356,10 +421,13 @@ export class CloudRunSandboxProvider implements SandboxProvider {
   ): Promise<{ code: number | null; stderr: string }> {
     const marker = newExitMarker();
     const { stderr } = await this.cliToFile(
-      this.execArgs(sandboxId, // A subshell, so a script that exits still gets its marker printed.
-      ["/bin/sh", "-c", `(${script}); code=$?; ${printExitMarker(marker)}`, "sh", ...args], {
-        COPYFILE_DISABLE: "1",
-      }),
+      this.execArgs(
+        sandboxId, // A subshell, so a script that exits still gets its marker printed.
+        ["/bin/sh", "-c", `(${script}); code=$?; ${printExitMarker(marker)}`, "sh", ...args],
+        {
+          COPYFILE_DISABLE: "1",
+        },
+      ),
       file,
       // Room for the marker.
       maxBytes + 4096,
@@ -378,7 +446,8 @@ export class CloudRunSandboxProvider implements SandboxProvider {
     }
     const { body, code } = splitExitMarker(tail, marker);
     await truncate(file, size - (tail.length - body.length));
-    if ((await stat(file)).size > maxBytes) throw new Error(`The output is larger than ${maxBytes} bytes`);
+    if ((await stat(file)).size > maxBytes)
+      throw new Error(`The output is larger than ${maxBytes} bytes`);
     return { code, stderr };
   }
 
@@ -514,7 +583,9 @@ export class CloudRunSandboxProvider implements SandboxProvider {
   }
 
   async status(sandboxId: string): Promise<SandboxStatus> {
-    const result = await this.cli(["exec", sandboxId, "--", "/bin/sh", "-c", "true"], { check: false });
+    const result = await this.cli(["exec", sandboxId, "--", "/bin/sh", "-c", "true"], {
+      check: false,
+    });
     if (result.code === 0) return "running";
     if (/not running/.test(result.stderr)) return "missing";
     return "stopped";
@@ -540,7 +611,11 @@ export class CloudRunSandboxProvider implements SandboxProvider {
   }
 
   /** `sandbox exec` arguments with a PATH, HOME and `env` set, since a sandbox inherits none. */
-  private execArgs(sandboxId: string, command: string[], env: Record<string, string> = {}): string[] {
+  private execArgs(
+    sandboxId: string,
+    command: string[],
+    env: Record<string, string> = {},
+  ): string[] {
     const assignments = Object.entries({
       PATH: this.opts.path ?? DEFAULT_PATH,
       HOME: "/root",
@@ -576,7 +651,9 @@ export class CloudRunSandboxProvider implements SandboxProvider {
     const headroom = this.opts.memoryHeadroomMb ?? 1536;
     if (headroom !== false) {
       const kb = Math.round((limits.memoryMb + headroom) * 1024);
-      lines.push(`ulimit -v ${kb} 2>/dev/null || echo "agent-runtime: could not cap memory at ${kb} KiB" >&2`);
+      lines.push(
+        `ulimit -v ${kb} 2>/dev/null || echo "agent-runtime: could not cap memory at ${kb} KiB" >&2`,
+      );
     }
     // dash calls the process limit -p, bash -u.
     lines.push(
@@ -604,10 +681,13 @@ export class CloudRunSandboxProvider implements SandboxProvider {
   private coveredPaths(): Promise<string[]> {
     this.covered ??= (async () => {
       const hide = this.opts.hide ?? [];
-      const table = this.opts.mountTable ?? (await readFile("/proc/self/mounts", "utf8").catch(() => ""));
+      const table =
+        this.opts.mountTable ?? (await readFile("/proc/self/mounts", "utf8").catch(() => ""));
       const extra = uncoveredFuseMounts(table, [...hide, ...(this.opts.visibleMounts ?? [])]);
       if (extra.length > 0) {
-        this.opts.log?.(`covering the job's FUSE mounts in sandboxes: ${extra.map((m) => `${m.point} (${m.type})`).join(", ")}`);
+        this.opts.log?.(
+          `covering the job's FUSE mounts in sandboxes: ${extra.map((m) => `${m.point} (${m.type})`).join(", ")}`,
+        );
       }
       return [...hide, ...extra.map((m) => m.point)];
     })();
@@ -626,7 +706,9 @@ export class CloudRunSandboxProvider implements SandboxProvider {
   private async waitReady(sandboxId: string): Promise<void> {
     const started = Date.now();
     for (;;) {
-      const result = await this.cli(["exec", sandboxId, "--", "/bin/sh", "-c", "true"], { check: false });
+      const result = await this.cli(["exec", sandboxId, "--", "/bin/sh", "-c", "true"], {
+        check: false,
+      });
       if (result.code === 0) return;
       if (Date.now() - started > 15_000) {
         throw new SandboxCliError(["exec"], result.code, result.signal, result.stderr);
@@ -658,7 +740,9 @@ export class CloudRunSandboxProvider implements SandboxProvider {
           stdout.push(d);
         }
       });
-      child.stderr!.setEncoding("utf8").on("data", (d: string) => (stderr = `${stderr}${d}`.slice(-16_384)));
+      child
+        .stderr!.setEncoding("utf8")
+        .on("data", (d: string) => (stderr = `${stderr}${d}`.slice(-16_384)));
       if (options.input && child.stdin) {
         child.stdin.on("error", () => {});
         options.input.pipe(child.stdin);
@@ -680,9 +764,17 @@ export class CloudRunSandboxProvider implements SandboxProvider {
   }
 
   /** Runs the CLI with its stdout going to `file`, killing it past `maxBytes`, reported as `reportedMax`. */
-  private cliToFile(args: string[], file: string, maxBytes: number, reportedMax = maxBytes): Promise<{ stderr: string }> {
+  private cliToFile(
+    args: string[],
+    file: string,
+    maxBytes: number,
+    reportedMax = maxBytes,
+  ): Promise<{ stderr: string }> {
     return new Promise((resolve, reject) => {
-      const child = spawn(this.bin, args, { stdio: ["ignore", "pipe", "pipe"], env: this.cliEnvironment() });
+      const child = spawn(this.bin, args, {
+        stdio: ["ignore", "pipe", "pipe"],
+        env: this.cliEnvironment(),
+      });
       const out = createWriteStream(file, { flags: "wx" });
       let size = 0;
       let overflow = false;
@@ -695,7 +787,9 @@ export class CloudRunSandboxProvider implements SandboxProvider {
         }
       });
       child.stdout.pipe(out);
-      child.stderr.setEncoding("utf8").on("data", (d: string) => (stderr = `${stderr}${d}`.slice(-16_384)));
+      child.stderr
+        .setEncoding("utf8")
+        .on("data", (d: string) => (stderr = `${stderr}${d}`.slice(-16_384)));
       // A CLI that never started leaves nothing to close the file.
       child.on("error", (error) => {
         out.destroy();

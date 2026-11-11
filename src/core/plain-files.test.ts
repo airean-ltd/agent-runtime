@@ -1,5 +1,15 @@
 import { execFileSync } from "node:child_process";
-import { link, mkdir, mkdtemp, readdir, readFile, readlink, stat, symlink, writeFile } from "node:fs/promises";
+import {
+  link,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  readlink,
+  stat,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -31,7 +41,8 @@ describe("extractPlainTar", () => {
       const members = format === "ustar" ? ["top.txt"] : ["."];
       await extractPlainTar(await pack(dir, members, format), into, 1024 * 1024);
       expect(await readFile(path.join(into, "top.txt"), "utf8")).toBe("top\n");
-      if (format !== "ustar") expect(await readFile(path.join(into, deep, "file.jsonl"), "utf8")).toBe("deep\n");
+      if (format !== "ustar")
+        expect(await readFile(path.join(into, deep, "file.jsonl"), "utf8")).toBe("deep\n");
     }
   });
 
@@ -49,9 +60,9 @@ describe("extractPlainTar", () => {
     const dir = await temp("src");
     await writeFile(path.join(dir, "a"), "x");
     await link(path.join(dir, "a"), path.join(dir, "b"));
-    await expect(extractPlainTar(await pack(dir, ["a", "b"]), await temp("into"), 1024)).rejects.toThrow(
-      "is a hard link",
-    );
+    await expect(
+      extractPlainTar(await pack(dir, ["a", "b"]), await temp("into"), 1024),
+    ).rejects.toThrow("is a hard link");
   });
 
   it("refuses a path that leaves the directory", async () => {
@@ -71,7 +82,9 @@ describe("extractPlainTar", () => {
     const archive = path.join(await temp("archive"), "a.tar");
     await writeFile(archive, Buffer.concat([header, body, Buffer.alloc(1024)]));
     const into = await temp("into");
-    await expect(extractPlainTar(archive, into, 1024)).rejects.toThrow("points outside the archive");
+    await expect(extractPlainTar(archive, into, 1024)).rejects.toThrow(
+      "points outside the archive",
+    );
     expect(await readdir(path.dirname(into))).not.toContain("escaped");
   });
 
@@ -79,7 +92,9 @@ describe("extractPlainTar", () => {
     const dir = await temp("src");
     await writeFile(path.join(dir, "big"), Buffer.alloc(10_000));
     const archive = await pack(dir, ["big"]);
-    await expect(extractPlainTar(archive, await temp("into"), 5_000)).rejects.toThrow("more than 5000 bytes");
+    await expect(extractPlainTar(archive, await temp("into"), 5_000)).rejects.toThrow(
+      "more than 5000 bytes",
+    );
     const whole = await readFile(archive);
     const cut = path.join(await temp("archive"), "cut.tar");
     await writeFile(cut, whole.subarray(0, 4096));
@@ -111,7 +126,9 @@ async function rawTar(members: { name: string; type: string; link?: string }[]):
 /** One archive of `[dir, member]` pairs in order, as a sandbox could build by hand. */
 async function packFrom(...parts: [string, string][]): Promise<string> {
   const archive = path.join(await temp("archive"), "a.tar");
-  parts.forEach(([dir, member], i) => execFileSync("tar", [i === 0 ? "-cf" : "-rf", archive, "-C", dir, member], { env }));
+  parts.forEach(([dir, member], i) =>
+    execFileSync("tar", [i === 0 ? "-cf" : "-rf", archive, "-C", dir, member], { env }),
+  );
   return archive;
 }
 
@@ -147,7 +164,9 @@ describe("extractPlainTar with links", () => {
       await packFrom([linkDir, "a"], [realDir, "a/x"]),
       await packFrom([realDir, "a/x"], [linkDir, "a"]),
     ]) {
-      await expect(extractPlainTar(archive, await temp("into"), 1024, links)).rejects.toThrow("a/x is under the symlink a");
+      await expect(extractPlainTar(archive, await temp("into"), 1024, links)).rejects.toThrow(
+        "a/x is under the symlink a",
+      );
       expect(await readdir(outside)).toEqual([]);
     }
   });
@@ -160,7 +179,9 @@ describe("extractPlainTar with links", () => {
     await mkdir(path.join(second, "a"));
     await symlink("/etc/passwd", path.join(second, "a/b"));
     const archive = await packFrom([first, "a"], [second, "a/b"]);
-    await expect(extractPlainTar(archive, await temp("into"), 1024, links)).rejects.toThrow("a/b is under the symlink a");
+    await expect(extractPlainTar(archive, await temp("into"), 1024, links)).rejects.toThrow(
+      "a/b is under the symlink a",
+    );
     expect(await readdir(outside)).toEqual([]);
   });
 
@@ -169,9 +190,9 @@ describe("extractPlainTar with links", () => {
     await mkdir(path.join(asDir, "a"));
     const asLink = await temp("src");
     await symlink("/tmp", path.join(asLink, "a"));
-    await expect(extractPlainTar(await packFrom([asDir, "a"], [asLink, "a"]), await temp("into"), 1024, links)).rejects.toThrow(
-      "a is in the archive twice",
-    );
+    await expect(
+      extractPlainTar(await packFrom([asDir, "a"], [asLink, "a"]), await temp("into"), 1024, links),
+    ).rejects.toThrow("a is in the archive twice");
   });
 
   it("makes a hard link a copy, and refuses one to a file the archive does not hold", async () => {
@@ -194,7 +215,9 @@ describe("extractPlainTar with links", () => {
     const into = path.join(outside, "into");
     await mkdir(into);
     const escaping = await rawTar([{ name: "../escaped", type: "2", link: "/etc/passwd" }]);
-    await expect(extractPlainTar(escaping, into, 1024, links)).rejects.toThrow("points outside the archive");
+    await expect(extractPlainTar(escaping, into, 1024, links)).rejects.toThrow(
+      "points outside the archive",
+    );
     expect(await readdir(outside)).toEqual(["into"]);
     const device = await rawTar([{ name: "null", type: "3" }]);
     await expect(extractPlainTar(device, into, 1024, links)).rejects.toThrow('null is of type "3"');
@@ -212,7 +235,9 @@ describe("readPlainFile and assertPlainTree", () => {
     await assertPlainTree(dir, 100, { links: true });
     const pointer = path.join(await temp("tree"), "workspace");
     await symlink(dir, pointer);
-    await expect(assertPlainTree(pointer, 100, { links: true })).rejects.toThrow("is not a regular file or directory");
+    await expect(assertPlainTree(pointer, 100, { links: true })).rejects.toThrow(
+      "is not a regular file or directory",
+    );
   });
 
   it("read a regular file and refuse a symlink to one", async () => {
@@ -234,7 +259,9 @@ describe("readPlainFile and assertPlainTree", () => {
     await expect(assertPlainTree(dir, 100)).rejects.toThrow("sub/etc is not a regular file");
     const pointer = path.join(await temp("tree"), "sessions");
     await symlink(dir, pointer);
-    await expect(assertPlainTree(pointer, 100)).rejects.toThrow("is not a regular file or directory");
+    await expect(assertPlainTree(pointer, 100)).rejects.toThrow(
+      "is not a regular file or directory",
+    );
     await expect(assertPlainTree(path.join(dir, "sub"), 0)).rejects.toThrow("more than 0 bytes");
   });
 });

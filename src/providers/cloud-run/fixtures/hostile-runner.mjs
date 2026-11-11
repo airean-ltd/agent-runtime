@@ -9,7 +9,9 @@ import { mkdirSync, rmSync, symlinkSync } from "node:fs";
 
 let seq = 0;
 const emit = (type, payload) =>
-  process.stdout.write(`${JSON.stringify({ seq: seq++, ts: new Date().toISOString(), type, payload })}\n`);
+  process.stdout.write(
+    `${JSON.stringify({ seq: seq++, ts: new Date().toISOString(), type, payload })}\n`,
+  );
 const decode = (value) => Buffer.from(value, "base64").toString();
 
 mkdirSync("outputs", { recursive: true });

@@ -34,13 +34,15 @@ export function stableJson(value: unknown): string {
     return JSON.stringify(value);
   }
   if (typeof value === "number") {
-    if (!Number.isFinite(value)) throw new TypeError("stableJson cannot encode a non-finite number");
+    if (!Number.isFinite(value))
+      throw new TypeError("stableJson cannot encode a non-finite number");
     return JSON.stringify(value);
   }
   if (Array.isArray(value)) {
     return `[${value
       .map((item) => {
-        if (item === undefined) throw new TypeError("stableJson cannot encode undefined in an array");
+        if (item === undefined)
+          throw new TypeError("stableJson cannot encode undefined in an array");
         return stableJson(item);
       })
       .join(",")}]`;
@@ -91,6 +93,8 @@ export async function sealManifest<T extends object>(
 }
 
 /** Whether the manifest's `digest` is the digest of its other fields. */
-export async function checkManifestDigest<T extends { digest: string }>(manifest: T): Promise<boolean> {
+export async function checkManifestDigest<T extends { digest: string }>(
+  manifest: T,
+): Promise<boolean> {
   return (await manifestDigest(manifest)) === manifest.digest;
 }

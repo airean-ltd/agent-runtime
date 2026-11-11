@@ -6,5 +6,7 @@ await runDurableAgent({
   defaultModel: { provider: "kimi-coding", model: "kimi-for-coding" },
   systemPrompt: () => "You are a test agent.",
   builtinTools: ["bash"],
-  customTools: ({ outputsDir, emit }) => [createDurableSaveOutputTool({ outputsDir, emit, kinds: ["table", "chart"] })],
+  customTools: ({ outputsDir, emit }) => [
+    createDurableSaveOutputTool({ outputsDir, emit, kinds: ["table", "chart"] }),
+  ],
 });

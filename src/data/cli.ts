@@ -19,7 +19,10 @@ export type CliIo = {
 };
 
 /** `<command> --a 1 --b=x --flag` as the command and its arguments, all strings. */
-export function parseArgv(argv: readonly string[]): { command: string | null; args: Record<string, string> } {
+export function parseArgv(argv: readonly string[]): {
+  command: string | null;
+  args: Record<string, string>;
+} {
   const args: Record<string, string> = {};
   let command: string | null = null;
   for (let i = 0; i < argv.length; i++) {
@@ -56,7 +59,9 @@ export function formatHelp(list: DataCommandList): string {
         arg.required ? "required" : null,
         arg.default !== undefined ? `default ${String(arg.default)}` : null,
       ].filter(Boolean);
-      lines.push(`      --${arg.name} (${notes.join(", ")})${arg.description ? `  ${arg.description}` : ""}`);
+      lines.push(
+        `      --${arg.name} (${notes.join(", ")})${arg.description ? `  ${arg.description}` : ""}`,
+      );
     }
   }
   return lines.join("\n");
@@ -66,7 +71,8 @@ function endpoint(env: NodeJS.ProcessEnv): { base: string; token: string } {
   let base = env.AGENT_DATA_URL;
   if (!base && env.LLM_BASE_URL) base = new URL(env.LLM_BASE_URL).origin;
   const token = env.AGENT_DATA_TOKEN ?? env.LLM_API_KEY;
-  if (!base || !token) throw new Error("No data gateway in this environment (AGENT_DATA_URL, AGENT_DATA_TOKEN).");
+  if (!base || !token)
+    throw new Error("No data gateway in this environment (AGENT_DATA_URL, AGENT_DATA_TOKEN).");
   return { base: base.replace(/\/+$/, ""), token };
 }
 

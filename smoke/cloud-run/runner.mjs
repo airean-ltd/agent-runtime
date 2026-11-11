@@ -36,12 +36,18 @@ const turns = (() => {
   }
 })();
 emit("run_started", { runId: process.env.RUN_ID, turns });
-appendFileSync(`${sessions}/turns.jsonl`, `${JSON.stringify({ prompt, at: new Date().toISOString() })}\n`);
+appendFileSync(
+  `${sessions}/turns.jsonl`,
+  `${JSON.stringify({ prompt, at: new Date().toISOString() })}\n`,
+);
 
 const sha = (file) => createHash("sha256").update(readFileSync(file)).digest("hex");
 const reach = async (url) => {
   try {
-    const res = await fetch(url, { headers: { "Metadata-Flavor": "Google" }, signal: AbortSignal.timeout(4000) });
+    const res = await fetch(url, {
+      headers: { "Metadata-Flavor": "Google" },
+      signal: AbortSignal.timeout(4000),
+    });
     return `reached ${res.status}`;
   } catch (error) {
     return `blocked ${error.cause?.code ?? error.name}`;
@@ -63,7 +69,10 @@ emit("notice", {
   internet: await reach("https://www.google.com"),
   metadata: await reach("http://metadata.google.internal/computeMetadata/v1/project/project-id"),
   metadataIp: await reach("http://169.254.169.254/computeMetadata/v1/project/project-id"),
-  dns: await lookup("www.google.com").then((a) => `resolved ${a.address}`, (e) => `failed ${e.code}`),
+  dns: await lookup("www.google.com").then(
+    (a) => `resolved ${a.address}`,
+    (e) => `failed ${e.code}`,
+  ),
   hiddenSessions: (() => {
     try {
       return readdirSync("/sessions");
@@ -114,7 +123,12 @@ const started = Date.now();
 const res = await fetch(`${process.env.LLM_BASE_URL}/v1/messages`, {
   method: "POST",
   headers: { "x-api-key": process.env.LLM_API_KEY, "content-type": "application/json" },
-  body: JSON.stringify({ model: "fake", stream: true, max_tokens: 64, messages: [{ role: "user", content: prompt }] }),
+  body: JSON.stringify({
+    model: "fake",
+    stream: true,
+    max_tokens: 64,
+    messages: [{ role: "user", content: prompt }],
+  }),
 });
 const arrivals = [];
 const decoder = new TextDecoder();
@@ -123,7 +137,10 @@ for await (const chunk of res.body) {
   buffer += decoder.decode(chunk, { stream: true });
   let end;
   while ((end = buffer.indexOf("\n\n")) >= 0) {
-    const data = buffer.slice(0, end).split("\n").find((l) => l.startsWith("data: "));
+    const data = buffer
+      .slice(0, end)
+      .split("\n")
+      .find((l) => l.startsWith("data: "));
     buffer = buffer.slice(end + 2);
     const event = data && JSON.parse(data.slice(6));
     if (event?.delta?.type === "text_delta") {
@@ -133,4 +150,7 @@ for await (const chunk of res.body) {
   }
 }
 emit("notice", { kind: "stream", status: res.status, arrivals });
-emit("run_finished", { status: res.ok ? "succeeded" : "failed", error: res.ok ? undefined : `model answered ${res.status}` });
+emit("run_finished", {
+  status: res.ok ? "succeeded" : "failed",
+  error: res.ok ? undefined : `model answered ${res.status}`,
+});

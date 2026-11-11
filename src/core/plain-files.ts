@@ -54,7 +54,11 @@ export async function readPlainFile(file: string, maxBytes: number): Promise<Buf
  * `links`, symlinks under `dir` pass too, unread; `dir` itself must still be
  * a directory.
  */
-export async function assertPlainTree(dir: string, maxBytes: number, options: PlainOptions = {}): Promise<void> {
+export async function assertPlainTree(
+  dir: string,
+  maxBytes: number,
+  options: PlainOptions = {},
+): Promise<void> {
   let total = 0;
   const walk = async (current: string): Promise<void> => {
     const info = await lstat(current);
@@ -64,7 +68,9 @@ export async function assertPlainTree(dir: string, maxBytes: number, options: Pl
       total += info.size;
       if (total > maxBytes) throw new UnsafeFileError(`more than ${maxBytes} bytes`);
     } else if (!(options.links && info.isSymbolicLink() && current !== dir)) {
-      throw new UnsafeFileError(`${path.relative(dir, current) || "."} is not a regular file or directory`);
+      throw new UnsafeFileError(
+        `${path.relative(dir, current) || "."} is not a regular file or directory`,
+      );
     }
   };
   await walk(dir);
@@ -172,7 +178,10 @@ export async function extractPlainTar(
       const type = String.fromCharCode(header[156]!);
       const ustar = header.subarray(257, 263).toString("latin1") === "ustar\0";
       const prefix = ustar ? field(header, 345, 155) : "";
-      let name = longName ?? pax.path ?? (prefix ? `${prefix}/${field(header, 0, 100)}` : field(header, 0, 100));
+      let name =
+        longName ??
+        pax.path ??
+        (prefix ? `${prefix}/${field(header, 0, 100)}` : field(header, 0, 100));
       const length = pax.size !== undefined ? Number(pax.size) : octal(header, 124, 12);
       if (!Number.isSafeInteger(length) || length < 0) throw new UnsafeFileError("bad member size");
       const padded = Math.ceil(length / BLOCK) * BLOCK;
@@ -215,7 +224,8 @@ export async function extractPlainTar(
         } else {
           // A hard link names an earlier member; it becomes a copy of that file.
           const source = memberName(linkName);
-          if (!source || !files.has(source)) throw new UnsafeFileError(`${name} links to a file the archive does not hold`);
+          if (!source || !files.has(source))
+            throw new UnsafeFileError(`${name} links to a file the archive does not hold`);
           total += (await lstat(path.join(into, source))).size;
           if (total > maxBytes) throw new UnsafeFileError(`more than ${maxBytes} bytes`);
           await mkdir(path.dirname(path.join(into, member)), { recursive: true, mode: 0o755 });
@@ -226,7 +236,12 @@ export async function extractPlainTar(
         continue;
       }
       if (type !== "0" && type !== "\0" && type !== "7") {
-        const what = type === "2" ? "a symlink" : type === "1" ? "a hard link" : `of type ${JSON.stringify(type)}`;
+        const what =
+          type === "2"
+            ? "a symlink"
+            : type === "1"
+              ? "a hard link"
+              : `of type ${JSON.stringify(type)}`;
         throw new UnsafeFileError(`${name} is ${what}`);
       }
       total += length;
@@ -243,7 +258,7 @@ export async function extractPlainTar(
         octal(header, 100, 8) & 0o111 ? 0o755 : 0o644,
       );
       try {
-        for (let done = 0; done < length; ) {
+        for (let done = 0; done < length;) {
           const chunk = await read(Math.min(1024 * 1024, length - done), position + done);
           await out.write(chunk);
           done += chunk.length;

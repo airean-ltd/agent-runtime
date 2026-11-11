@@ -11,7 +11,9 @@ const dir = new URL(".", import.meta.url);
 
 describe("the contract", () => {
   it("imports nothing but its own files", async () => {
-    const sources = (await readdir(dir)).filter((f) => f.endsWith(".ts") && !f.endsWith(".test.ts"));
+    const sources = (await readdir(dir)).filter(
+      (f) => f.endsWith(".ts") && !f.endsWith(".test.ts"),
+    );
     expect(sources.length).toBeGreaterThan(0);
     for (const file of sources) {
       const text = await readFile(new URL(file, dir), "utf8");

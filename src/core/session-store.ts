@@ -32,7 +32,11 @@ export interface SessionStore {
    * false when there was nothing to write, which keeps what is stored. A
    * failed write keeps it too.
    */
-  saveArchive?(key: string, write: (file: string) => Promise<boolean>, opts: { gzip: boolean }): Promise<boolean>;
+  saveArchive?(
+    key: string,
+    write: (file: string) => Promise<boolean>,
+    opts: { gzip: boolean },
+  ): Promise<boolean>;
   /** Optional, with `saveArchive`: the file holding the key's archive, or null when there is none yet. */
   archive?(key: string, opts: { gzip: boolean }): Promise<string | null>;
 }
@@ -135,12 +139,19 @@ export class DirectorySessionStore implements SessionStore {
     return opts.gzip ? `${this.pathFor(key)}.gz` : this.pathFor(key);
   }
 
-  async saveArchive(key: string, write: (file: string) => Promise<boolean>, opts: { gzip: boolean }): Promise<boolean> {
+  async saveArchive(
+    key: string,
+    write: (file: string) => Promise<boolean>,
+    opts: { gzip: boolean },
+  ): Promise<boolean> {
     const target = this.archivePath(key, opts);
     await mkdir(this.rootDir, { recursive: true });
     // Written in place on the store's volume and renamed over the key's, so a
     // restore reads one archive or another, never a part of one.
-    const temp = path.join(this.rootDir, `.${path.basename(target)}.${randomBytes(6).toString("hex")}.tmp`);
+    const temp = path.join(
+      this.rootDir,
+      `.${path.basename(target)}.${randomBytes(6).toString("hex")}.tmp`,
+    );
     try {
       if (!(await write(temp))) {
         await rm(temp, { force: true });

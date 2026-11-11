@@ -33,7 +33,9 @@ describe("defineDataCommands", () => {
     expect(() => defineDataCommands({ Bad_Name: { description: "x" } })).toThrow(/kebab-case/);
     expect(() => defineDataCommands({ ok: { description: "" } })).toThrow(/description/);
     expect(() =>
-      defineDataCommands({ ok: { description: "x", args: { n: { type: "number", default: "1" } } } }),
+      defineDataCommands({
+        ok: { description: "x", args: { n: { type: "number", default: "1" } } },
+      }),
     ).toThrow(/default/);
   });
 });
@@ -50,8 +52,14 @@ describe("parseDataArgs", () => {
   });
 
   it("refuses unknown, mistyped and missing arguments", () => {
-    expect(parseDataArgs(spec, { since: "x" })).toEqual({ ok: false, error: "Unknown argument --since." });
-    expect(parseDataArgs(spec, { limit: "many" })).toEqual({ ok: false, error: "--limit must be a number." });
+    expect(parseDataArgs(spec, { since: "x" })).toEqual({
+      ok: false,
+      error: "Unknown argument --since.",
+    });
+    expect(parseDataArgs(spec, { limit: "many" })).toEqual({
+      ok: false,
+      error: "--limit must be a number.",
+    });
     expect(parseDataArgs(spec, { limit: "" })).toMatchObject({ ok: false });
     expect(parseDataArgs(spec, [])).toMatchObject({ ok: false });
     expect(parseDataArgs(commands.race, {})).toEqual({ ok: false, error: "--date is required." });
@@ -186,7 +194,11 @@ describe("the gateway's /data route, through the CLI", () => {
     const env = { LLM_BASE_URL: `${url}/v1`, LLM_API_KEY: token };
     const ran = await cli(["thread-history", "--limit", "4"], env);
     expect(ran.code).toBe(0);
-    expect(JSON.parse(ran.out)).toEqual({ command: "thread-history", args: { limit: 4 }, runId: "run_7" });
+    expect(JSON.parse(ran.out)).toEqual({
+      command: "thread-history",
+      args: { limit: 4 },
+      runId: "run_7",
+    });
 
     const help = await cli(["--help"], { AGENT_DATA_URL: url, AGENT_DATA_TOKEN: token });
     expect(help.out).toBe(formatHelp(describeDataCommands(commands)));
@@ -235,7 +247,9 @@ describe("the gateway's /data route, through the CLI", () => {
     const loaded = await loadDataCommands({ LLM_BASE_URL: `${url}/v1`, LLM_API_KEY: token });
     expect(loaded).toEqual({ list: describeDataCommands(commands), url, token });
     expect(await loadDataCommands({ LLM_BASE_URL: `${url}/v1` })).toBeNull();
-    expect(await loadDataCommands({ LLM_BASE_URL: "http://127.0.0.1:1", LLM_API_KEY: token })).toBeNull();
+    expect(
+      await loadDataCommands({ LLM_BASE_URL: "http://127.0.0.1:1", LLM_API_KEY: token }),
+    ).toBeNull();
   });
 
   it("offers each command as a typed tool that calls it for the token's run", async () => {
@@ -246,12 +260,21 @@ describe("the gateway's /data route, through the CLI", () => {
 
     const history = tools[0]!;
     expect(history.parameters).toMatchObject({
-      properties: { limit: { type: "number", description: "How many turns" }, full: { type: "boolean" } },
+      properties: {
+        limit: { type: "number", description: "How many turns" },
+        full: { type: "boolean" },
+      },
     });
     expect((history.parameters as { required?: string[] }).required ?? []).toEqual([]);
     expect((tools[1]!.parameters as { required?: string[] }).required).toEqual(["date"]);
 
-    const ran = await history.execute("call_1", { limit: 4, full: undefined }, undefined, undefined, undefined!);
+    const ran = await history.execute(
+      "call_1",
+      { limit: 4, full: undefined },
+      undefined,
+      undefined,
+      undefined!,
+    );
     expect(JSON.parse((ran.content[0] as { text: string }).text)).toEqual({
       command: "thread-history",
       args: { limit: 4 },

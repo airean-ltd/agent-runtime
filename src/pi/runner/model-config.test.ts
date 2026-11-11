@@ -10,7 +10,12 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { RunEvent } from "../../contract/events.ts";
 import { createInProcessGateway, type InProcessGateway } from "../../core/gateway.ts";
 import { startFakeUpstream, type FakeUpstream } from "../../testing/fake-upstream.ts";
-import { DEFAULT_CONTEXT_WINDOW, DEFAULT_MAX_TOKENS, registerModel, resolveModelConfig } from "./model-config.ts";
+import {
+  DEFAULT_CONTEXT_WINDOW,
+  DEFAULT_MAX_TOKENS,
+  registerModel,
+  resolveModelConfig,
+} from "./model-config.ts";
 
 const fixture = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures/runner.ts");
 const defaultModel = { provider: "kimi-coding", model: "kimi-for-coding" };
@@ -20,7 +25,10 @@ describe("resolveModelConfig", () => {
   it("keeps to pi's catalog without LLM_API", () => {
     expect(resolveModelConfig({}, defaultModel)).toEqual({ kind: "catalog", ...defaultModel });
     expect(
-      resolveModelConfig({ LLM_PROVIDER: "anthropic", LLM_MODEL: "claude-x", LLM_BASE_URL: "http://g" }, defaultModel),
+      resolveModelConfig(
+        { LLM_PROVIDER: "anthropic", LLM_MODEL: "claude-x", LLM_BASE_URL: "http://g" },
+        defaultModel,
+      ),
     ).toEqual({ kind: "catalog", provider: "anthropic", model: "claude-x" });
   });
 
@@ -68,8 +76,12 @@ describe("resolveModelConfig", () => {
   it("adds /v1 to a bare origin for openai only", () => {
     const base = (api: string, url: string) =>
       resolveModelConfig({ ...openai, LLM_API: api, LLM_BASE_URL: url }, defaultModel);
-    expect(base("openai", "http://127.0.0.1:8080/")).toMatchObject({ baseUrl: "http://127.0.0.1:8080/v1" });
-    expect(base("openai", "http://127.0.0.1:8080/v1")).toMatchObject({ baseUrl: "http://127.0.0.1:8080/v1" });
+    expect(base("openai", "http://127.0.0.1:8080/")).toMatchObject({
+      baseUrl: "http://127.0.0.1:8080/v1",
+    });
+    expect(base("openai", "http://127.0.0.1:8080/v1")).toMatchObject({
+      baseUrl: "http://127.0.0.1:8080/v1",
+    });
     expect(base("anthropic", "http://127.0.0.1:8080/")).toMatchObject({
       provider: "anthropic-compatible",
       api: "anthropic-messages",
@@ -90,7 +102,8 @@ describe("resolveModelConfig", () => {
       [{ ...openai, LLM_COMPAT: "[1]" }, /LLM_COMPAT must be/],
       [{ ...openai, LLM_COMPAT: "{" }, /LLM_COMPAT must be/],
     ];
-    for (const [env, error] of bad) expect(() => resolveModelConfig(env, defaultModel), JSON.stringify(env)).toThrow(error);
+    for (const [env, error] of bad)
+      expect(() => resolveModelConfig(env, defaultModel), JSON.stringify(env)).toThrow(error);
   });
 });
 
@@ -121,10 +134,19 @@ describe("registerModel", () => {
 });
 
 /** Runs the fixture runner with `env` and collects the run events it prints. */
-async function runRunner(env: Record<string, string>, args: string[] = []): Promise<{ code: number | null; events: RunEvent[] }> {
+async function runRunner(
+  env: Record<string, string>,
+  args: string[] = [],
+): Promise<{ code: number | null; events: RunEvent[] }> {
   const workspace = await mkdtemp(path.join(tmpdir(), "agent-runtime-ws-"));
   const child = spawn(process.execPath, [fixture, ...args], {
-    env: { PATH: process.env.PATH ?? "", HOME: workspace, PI_OFFLINE: "1", WORKSPACE: workspace, ...env },
+    env: {
+      PATH: process.env.PATH ?? "",
+      HOME: workspace,
+      PI_OFFLINE: "1",
+      WORKSPACE: workspace,
+      ...env,
+    },
     stdio: ["ignore", "pipe", "inherit"],
   });
   let out = "";
@@ -171,7 +193,12 @@ describe("runAgent with an OpenAI-compatible model", { timeout: 30_000 }, () => 
 
   it("answers through a gateway in openai format, the run token as its bearer key", async () => {
     upstream = await startFakeUpstream({ apiKey: "sk-provider" });
-    gateway = createInProcessGateway({ format: "openai", baseUrl: upstream.baseUrl, apiKey: "sk-provider", log: () => {} });
+    gateway = createInProcessGateway({
+      format: "openai",
+      baseUrl: upstream.baseUrl,
+      apiKey: "sk-provider",
+      log: () => {},
+    });
     const url = await gateway.listen();
     const token = await gateway.grant("run_1", 60_000);
 
@@ -184,12 +211,22 @@ describe("runAgent with an OpenAI-compatible model", { timeout: 30_000 }, () => 
     });
 
     expect(code).toBe(0);
-    expect(events[0]).toMatchObject({ type: "run_started", payload: { model: "openai-compatible/gpt-6-luna" } });
+    expect(events[0]).toMatchObject({
+      type: "run_started",
+      payload: { model: "openai-compatible/gpt-6-luna" },
+    });
     const text = events.flatMap((e) => (e.type === "text_delta" ? [e.payload.delta] : [])).join("");
     expect(text).toBe("Hello from the fake model.");
     expect(events.at(-1)).toMatchObject({ type: "run_finished", payload: { status: "succeeded" } });
     const [seen] = upstream.requests;
-    expect(seen).toMatchObject({ path: "/v1/chat/completions", headers: { authorization: "Bearer sk-provider" } });
-    expect(seen!.body).toMatchObject({ model: "gpt-6-luna", stream: true, max_completion_tokens: 4096 });
+    expect(seen).toMatchObject({
+      path: "/v1/chat/completions",
+      headers: { authorization: "Bearer sk-provider" },
+    });
+    expect(seen!.body).toMatchObject({
+      model: "gpt-6-luna",
+      stream: true,
+      max_completion_tokens: 4096,
+    });
   });
 });

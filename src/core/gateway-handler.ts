@@ -242,7 +242,9 @@ export function createGatewayHandler(options: GatewayHandlerOptions): GatewayHan
         // Piped chunk by chunk, so a streamed response reaches the agent as it is sent.
         // An agent that hangs up mid-answer (a cancel, a timeout, a shutdown) aborts
         // the upstream call, which errors the body; that ends this pipeline, not the process.
-        await pipeline(Readable.fromWeb(upstreamRes.body as WebReadableStream), res).catch(() => {});
+        await pipeline(Readable.fromWeb(upstreamRes.body as WebReadableStream), res).catch(
+          () => {},
+        );
       } else {
         res.end();
       }
@@ -253,7 +255,12 @@ export function createGatewayHandler(options: GatewayHandlerOptions): GatewayHan
         ms: Date.now() - started,
       });
     } catch (error) {
-      log({ runId: grant.runId, path: url.pathname, error: String(error), ms: Date.now() - started });
+      log({
+        runId: grant.runId,
+        path: url.pathname,
+        error: String(error),
+        ms: Date.now() - started,
+      });
       if (!res.headersSent) res.writeHead(502, { "content-type": "application/json" });
       res.end('{"error":"upstream_failed"}');
     }

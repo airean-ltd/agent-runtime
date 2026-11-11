@@ -9,7 +9,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createInProcessGateway } from "../../core/gateway.ts";
 import { createFakeSandboxCli, type FakeSandboxCli } from "../../testing/fake-sandbox.ts";
 import { startFakeUpstream } from "../../testing/fake-upstream.ts";
-import { CloudRunSandboxProvider, exposedMounts, type CloudRunSandboxOptions } from "./cloud-run-provider.ts";
+import {
+  CloudRunSandboxProvider,
+  exposedMounts,
+  type CloudRunSandboxOptions,
+} from "./cloud-run-provider.ts";
 
 const LIMITS = { cpus: 1, memoryMb: 512, pids: 64 };
 
@@ -75,7 +79,11 @@ describe("CloudRunSandboxProvider", { timeout: 30_000 }, () => {
       // A sandbox's root is the job's filesystem, so what it must not read is
       // covered over, first, so no bind of its own lands under a cover.
       { source: path.join(cli.stateDir, id, "empty"), destination: sessions, readonly: true },
-      { source: path.join(cli.stateDir, id, "workspace"), destination: "/workspace", readonly: false },
+      {
+        source: path.join(cli.stateDir, id, "workspace"),
+        destination: "/workspace",
+        readonly: false,
+      },
       { source: data, destination: "/data/snapshot", readonly: true },
     ]);
     expect(await p.status(id)).toBe("running");
@@ -91,7 +99,12 @@ describe("CloudRunSandboxProvider", { timeout: 30_000 }, () => {
       "snapshots-bucket /snapshots fuse.gcsfuse ro 0 0",
       "fusectl /sys/fs/fuse/connections fusectl rw 0 0",
     ].join("\n");
-    const p = provider({ hide: ["/secrets"], visibleMounts: ["/snapshots"], mountTable: table, log: (m) => logs.push(m) });
+    const p = provider({
+      hide: ["/secrets"],
+      visibleMounts: ["/snapshots"],
+      mountTable: table,
+      log: (m) => logs.push(m),
+    });
     const first = await p.create({ image: "", limits: LIMITS });
     await p.create({ image: "", limits: LIMITS });
 
@@ -103,7 +116,9 @@ describe("CloudRunSandboxProvider", { timeout: 30_000 }, () => {
       "/sessions",
     ]);
     // Said once per provider, with each mount's type and never its source.
-    expect(logs).toEqual(["covering the job's FUSE mounts in sandboxes: /var/log (fuse), /sessions (fuse.gcsfuse)"]);
+    expect(logs).toEqual([
+      "covering the job's FUSE mounts in sandboxes: /var/log (fuse), /sessions (fuse.gcsfuse)",
+    ]);
   });
 
   it("reads the exit code from the marker, which the CLI itself loses", async () => {
@@ -145,7 +160,10 @@ describe("CloudRunSandboxProvider", { timeout: 30_000 }, () => {
     const p = provider({ memoryHeadroomMb: 1024 });
     const id = await p.create({ image: "", limits: LIMITS });
     await run(p, id, ["true"]);
-    const script = (await cli.calls()).filter((args) => args[0] === "exec").at(-1)!.join(" ");
+    const script = (await cli.calls())
+      .filter((args) => args[0] === "exec")
+      .at(-1)!
+      .join(" ");
     expect(script).toContain(`ulimit -v ${(512 + 1024) * 1024}`);
     expect(script).toContain("ulimit -p 64");
   });
@@ -177,9 +195,9 @@ describe("CloudRunSandboxProvider", { timeout: 30_000 }, () => {
     await writeFile(path.join(local, "sub", "a.txt"), "alpha\n");
 
     await p.upload(id, local, "/workspace/in");
-    expect(await readFile(path.join(cli.stateDir, id, "workspace", "in", "sub", "a.txt"), "utf8")).toBe(
-      "alpha\n",
-    );
+    expect(
+      await readFile(path.join(cli.stateDir, id, "workspace", "in", "sub", "a.txt"), "utf8"),
+    ).toBe("alpha\n");
     // Outside every bind, so it goes through tar over `sandbox exec`'s stdin.
     await p.upload(id, local, "/tmp/staged");
     expect((await run(p, id, ["cat", "/tmp/staged/sub/a.txt"])).stdout).toBe("alpha\n");
@@ -197,7 +215,11 @@ describe("CloudRunSandboxProvider", { timeout: 30_000 }, () => {
     const p = provider();
     const id = await p.create({ image: "", limits: LIMITS });
     // Made inside the sandbox, as a venv would be.
-    const made = await run(p, id, ["sh", "-c", "mkdir -p /tmp/ws/venv/bin && ln -s /usr/bin/python3 /tmp/ws/venv/bin/python && echo x > /tmp/ws/a"]);
+    const made = await run(p, id, [
+      "sh",
+      "-c",
+      "mkdir -p /tmp/ws/venv/bin && ln -s /usr/bin/python3 /tmp/ws/venv/bin/python && echo x > /tmp/ws/a",
+    ]);
     expect(made.code).toBe(0);
 
     const strict = await mkdtemp(path.join(tmpdir(), "agent-runtime-download-"));
@@ -219,9 +241,19 @@ describe("CloudRunSandboxProvider", { timeout: 30_000 }, () => {
     expect(made.code).toBe(0);
     const dir = await mkdtemp(path.join(tmpdir(), "agent-runtime-pack-"));
     const archive = path.join(dir, "ws.tar.gz");
-    expect(await p.packDir(one, "/workspace/ws", archive, { exclude: ["outputs"], gzip: true, maxBytes: 1024 * 1024 })).toBe(true);
-    expect(await p.packDir(one, "/workspace/missing", path.join(dir, "none"), { maxBytes: 1024 })).toBe(false);
-    await expect(p.packDir(one, "/workspace/ws", path.join(dir, "small"), { maxBytes: 10 })).rejects.toThrow("larger than 10 bytes");
+    expect(
+      await p.packDir(one, "/workspace/ws", archive, {
+        exclude: ["outputs"],
+        gzip: true,
+        maxBytes: 1024 * 1024,
+      }),
+    ).toBe(true);
+    expect(
+      await p.packDir(one, "/workspace/missing", path.join(dir, "none"), { maxBytes: 1024 }),
+    ).toBe(false);
+    await expect(
+      p.packDir(one, "/workspace/ws", path.join(dir, "small"), { maxBytes: 10 }),
+    ).rejects.toThrow("larger than 10 bytes");
 
     const two = await p.create({ image: "", limits: LIMITS });
     await p.unpackDir(two, archive, "/workspace/restored", { gzip: true });
@@ -268,7 +300,11 @@ describe("CloudRunSandboxProvider", { timeout: 30_000 }, () => {
 
   it("bridges the sandbox's loopback to the in-process gateway, streaming as sent", async () => {
     const upstream = await startFakeUpstream({ apiKey: "sk-real", gapMs: 60 });
-    const gateway = createInProcessGateway({ messagesUrl: upstream.messagesUrl, apiKey: "sk-real", log: () => {} });
+    const gateway = createInProcessGateway({
+      messagesUrl: upstream.messagesUrl,
+      apiKey: "sk-real",
+      log: () => {},
+    });
     const port = await freePort();
     const p = provider({ bridge: { port, onConnection: gateway.connect } });
     const id = await p.create({ image: "", limits: LIMITS });
@@ -327,11 +363,14 @@ describe("CloudRunSandboxProvider", { timeout: 30_000 }, () => {
     const id = await p.create({ image: "", limits: LIMITS });
     const ping = () =>
       new Promise<string>((resolve, reject) => {
-        const req = request({ host: "127.0.0.1", port, path: `/ping-${seen.length}`, agent: false }, (res) => {
-          let body = "";
-          res.on("data", (d) => (body += d));
-          res.on("end", () => resolve(body));
-        });
+        const req = request(
+          { host: "127.0.0.1", port, path: `/ping-${seen.length}`, agent: false },
+          (res) => {
+            let body = "";
+            res.on("data", (d) => (body += d));
+            res.on("end", () => resolve(body));
+          },
+        );
         req.on("error", reject);
         req.end();
       });
@@ -361,11 +400,9 @@ describe("CloudRunSandboxProvider, guarding the job", { timeout: 30_000 }, () =>
       await run(p, id, ["true"]);
       await p.destroy(id);
       for (const names of await cli.cliEnvNames()) {
-        expect(names.filter((n) => !["PWD", "SHLVL", "_", "__CF_USER_TEXT_ENCODING"].includes(n)).sort()).toEqual([
-          "EXTRA",
-          "HOME",
-          "PATH",
-        ]);
+        expect(
+          names.filter((n) => !["PWD", "SHLVL", "_", "__CF_USER_TEXT_ENCODING"].includes(n)).sort(),
+        ).toEqual(["EXTRA", "HOME", "PATH"]);
       }
     } finally {
       delete process.env.AGENT_RUNTIME_TEST_SECRET;
@@ -375,7 +412,9 @@ describe("CloudRunSandboxProvider, guarding the job", { timeout: 30_000 }, () =>
   it("fails an upload it could not pack, and a download over its cap", async () => {
     const p = provider({ maxDownloadBytes: 4_000 });
     const id = await p.create({ image: "", limits: LIMITS });
-    await expect(p.upload(id, "/no/such/dir", "/tmp/x")).rejects.toThrow("Could not pack /no/such/dir");
+    await expect(p.upload(id, "/no/such/dir", "/tmp/x")).rejects.toThrow(
+      "Could not pack /no/such/dir",
+    );
     await run(p, id, ["sh", "-c", "head -c 100000 /dev/zero > /workspace/big"]);
     const out = await mkdtemp(path.join(tmpdir(), "agent-runtime-download-"));
     await expect(p.download(id, "/workspace/big", out)).rejects.toThrow(/larger than|more than/);
@@ -383,7 +422,10 @@ describe("CloudRunSandboxProvider, guarding the job", { timeout: 30_000 }, () =>
 
   it("keeps a sandbox's workspace, and lists it, when deleting it failed", async () => {
     const failing = path.join(path.dirname(cli.bin), "failing-delete");
-    await writeFile(failing, `#!/bin/sh\n[ "$1" = delete ] && { echo "Error: boom" >&2; exit 1; }\nexec ${JSON.stringify(cli.bin)} "$@"\n`);
+    await writeFile(
+      failing,
+      `#!/bin/sh\n[ "$1" = delete ] && { echo "Error: boom" >&2; exit 1; }\nexec ${JSON.stringify(cli.bin)} "$@"\n`,
+    );
     await chmod(failing, 0o755);
     const p = provider({ sandboxBin: failing });
     const id = await p.create({ image: "", limits: LIMITS });

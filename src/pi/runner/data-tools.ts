@@ -38,10 +38,14 @@ function dataTool(command: Command, data: RunnerData, fetchImpl: typeof fetch): 
     name: dataToolName(command.name),
     label: command.name,
     description: command.description,
-    parameters: Type.Object(Object.fromEntries(command.args.map((arg) => [arg.name, argSchema(arg)]))),
+    parameters: Type.Object(
+      Object.fromEntries(command.args.map((arg) => [arg.name, argSchema(arg)])),
+    ),
     execute: async (_toolCallId, params) => {
       const args = Object.fromEntries(
-        Object.entries(params as Record<string, unknown>).filter(([, value]) => value !== undefined),
+        Object.entries(params as Record<string, unknown>).filter(
+          ([, value]) => value !== undefined,
+        ),
       );
       const res = await fetchImpl(`${data.url}/data/${encodeURIComponent(command.name)}`, {
         method: "POST",
@@ -63,7 +67,10 @@ function dataTool(command: Command, data: RunnerData, fetchImpl: typeof fetch): 
 }
 
 /** One typed tool per data command the gateway serves. */
-export function createDataTools(data: RunnerData, fetchImpl: typeof fetch = fetch): ToolDefinition[] {
+export function createDataTools(
+  data: RunnerData,
+  fetchImpl: typeof fetch = fetch,
+): ToolDefinition[] {
   return data.list.commands.map((command) => dataTool(command, data, fetchImpl));
 }
 
@@ -75,6 +82,8 @@ export function dataToolsPromptSection(list: DataCommandList): string {
     "",
     "Besides your files, these tools read live data for this conversation. Each returns JSON.",
     "",
-    ...list.commands.map((command) => `- \`${dataToolName(command.name)}\`: ${command.description}`),
+    ...list.commands.map(
+      (command) => `- \`${dataToolName(command.name)}\`: ${command.description}`,
+    ),
   ].join("\n");
 }
