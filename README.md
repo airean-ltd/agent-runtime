@@ -28,7 +28,7 @@ Releases are git tags that carry their built `dist/`. The repo is public, so ins
 { "dependencies": { "@eankhbayar/agent-runtime": "github:airean-ltd/agent-runtime#v0.15.0" } }
 ```
 
-`@earendil-works/pi-coding-agent` and `typebox` are peer dependencies, needed only where `./pi/runner` is imported. `./models` needs no AI SDK package; an app that wants an AI SDK model passes in the factories it already imports (see [Models](#models)).
+`@earendil-works/pi-coding-agent` and `typebox` are peer dependencies, needed only where `./pi/runner` is imported. The ranges are `>=0.85.1 <2` for pi and `^1.3.30` for typebox, which takes in 1.4; the tests run against typebox 1.4. `./models` needs no AI SDK package; an app that wants an AI SDK model passes in the factories it already imports (see [Models](#models)).
 
 ## In the sandbox
 
