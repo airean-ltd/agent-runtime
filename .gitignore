@@ -2,3 +2,6 @@ node_modules/
 dist/
 *.tsbuildinfo
 .DS_Store
+
+# AIREAN HQ's local docs mirror (hq sync).
+.hq/
