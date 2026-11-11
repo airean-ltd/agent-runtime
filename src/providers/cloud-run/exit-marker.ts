@@ -72,7 +72,10 @@ export class ExitMarkerReader {
 }
 
 /** Splits binary output from its trailing marker line. */
-export function splitExitMarker(output: Buffer, marker: string): { body: Buffer; code: number | null } {
+export function splitExitMarker(
+  output: Buffer,
+  marker: string,
+): { body: Buffer; code: number | null } {
   const needle = Buffer.from(marker);
   const at = output.lastIndexOf(needle);
   if (at < 0) return { body: output, code: null };

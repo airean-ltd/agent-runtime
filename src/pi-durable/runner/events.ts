@@ -28,7 +28,9 @@ function blocks(message: ModelMessage | undefined): Block[] {
 /** The text blocks of a message, joined; tool calls and thinking are left out. */
 function textOf(message: ModelMessage | undefined): string {
   return blocks(message)
-    .flatMap((block) => (block.type === "text" && typeof block.text === "string" ? [block.text] : []))
+    .flatMap((block) =>
+      block.type === "text" && typeof block.text === "string" ? [block.text] : [],
+    )
     .join("");
 }
 

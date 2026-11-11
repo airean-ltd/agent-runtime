@@ -1,4 +1,14 @@
-import { chmod, mkdir, mkdtemp, readdir, readFile, readlink, stat, symlink, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  readlink,
+  stat,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -25,7 +35,9 @@ describe("DirectorySessionStore with links", () => {
     await symlink("../../notes.txt", path.join(workspace, "venv/bin/notes"));
 
     const strict = new DirectorySessionStore(await temp("store"));
-    await expect(strict.save("thread_1", workspace)).rejects.toThrow("is not a regular file or directory");
+    await expect(strict.save("thread_1", workspace)).rejects.toThrow(
+      "is not a regular file or directory",
+    );
     const store = new DirectorySessionStore(await temp("store"), { links: true });
     await store.save("thread_1", workspace);
     const into = await temp("into");
@@ -37,7 +49,9 @@ describe("DirectorySessionStore with links", () => {
 
   it("holds a session to its cap", async () => {
     const store = new DirectorySessionStore(await temp("store"), { maxBytes: 10 });
-    await expect(store.save("thread_1", await sessionDir({ "big": "x".repeat(11) }))).rejects.toThrow("more than 10 bytes");
+    await expect(store.save("thread_1", await sessionDir({ big: "x".repeat(11) }))).rejects.toThrow(
+      "more than 10 bytes",
+    );
   });
 });
 
@@ -48,7 +62,10 @@ describe("DirectorySessionStore", () => {
     expect(await store.restore("thread_1", into)).toBe(false);
     expect(await readdir(into)).toEqual([]);
 
-    await store.save("thread_1", await sessionDir({ "a.jsonl": "one\n", "nested/b.jsonl": "two\n" }));
+    await store.save(
+      "thread_1",
+      await sessionDir({ "a.jsonl": "one\n", "nested/b.jsonl": "two\n" }),
+    );
     expect(await store.restore("thread_1", into)).toBe(true);
     expect(await readFile(path.join(into, "a.jsonl"), "utf8")).toBe("one\n");
     expect(await readFile(path.join(into, "nested", "b.jsonl"), "utf8")).toBe("two\n");
@@ -86,9 +103,9 @@ describe("DirectorySessionStore", () => {
       "No session directory",
     );
     const broken = new DirectorySessionStore(root, { tar: "false" });
-    await expect(broken.save("thread_1", await sessionDir({ "s.jsonl": "lost\n" }))).rejects.toThrow(
-      "tar failed",
-    );
+    await expect(
+      broken.save("thread_1", await sessionDir({ "s.jsonl": "lost\n" })),
+    ).rejects.toThrow("tar failed");
     const into = await temp("into");
     await store.restore("thread_1", into);
     expect(await readFile(path.join(into, "s.jsonl"), "utf8")).toBe("kept\n");
@@ -98,9 +115,9 @@ describe("DirectorySessionStore", () => {
   it("rejects a restore it could not read, rather than reporting no session", async () => {
     const root = await temp("store");
     await writeFile(path.join(root, "thread_1.tar"), "not a tar file");
-    await expect(new DirectorySessionStore(root).restore("thread_1", await temp("into"))).rejects.toThrow(
-      "the archive ends early",
-    );
+    await expect(
+      new DirectorySessionStore(root).restore("thread_1", await temp("into")),
+    ).rejects.toThrow("the archive ends early");
   });
 
   it("keeps every key inside its directory", () => {

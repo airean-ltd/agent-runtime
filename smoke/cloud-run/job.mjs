@@ -16,7 +16,11 @@
 
 import { stat } from "node:fs/promises";
 
-import { createInProcessGateway, DirectorySessionStore, executeRun } from "@eankhbayar/agent-runtime/core";
+import {
+  createInProcessGateway,
+  DirectorySessionStore,
+  executeRun,
+} from "@eankhbayar/agent-runtime/core";
 import { CloudRunSandboxProvider } from "@eankhbayar/agent-runtime/providers/cloud-run";
 import { startFakeUpstream } from "@eankhbayar/agent-runtime/testing";
 
@@ -38,20 +42,34 @@ const step = async (name, fn) => {
 const upstream = await startFakeUpstream({
   apiKey: "smoke-upstream-key",
   gapMs: 100,
-  reply: (body) => `You said ${JSON.stringify(body.messages?.[0]?.content)}; this is the fake model.`,
+  reply: (body) =>
+    `You said ${JSON.stringify(body.messages?.[0]?.content)}; this is the fake model.`,
 });
-const gateway = createInProcessGateway({ messagesUrl: upstream.messagesUrl, apiKey: "smoke-upstream-key" });
+const gateway = createInProcessGateway({
+  messagesUrl: upstream.messagesUrl,
+  apiKey: "smoke-upstream-key",
+});
 const bridgePort = Number(process.env.SMOKE_BRIDGE_PORT ?? 8080);
 const provider = new CloudRunSandboxProvider({
   namespace: "smoke",
-  bridge: { port: bridgePort, onConnection: gateway.connect, log: (m) => console.log(`BRIDGE ${m}`) },
+  bridge: {
+    port: bridgePort,
+    onConnection: gateway.connect,
+    log: (m) => console.log(`BRIDGE ${m}`),
+  },
   hide: ["/sessions"],
   ...(process.env.SMOKE_SANDBOX_BIN ? { sandboxBin: process.env.SMOKE_SANDBOX_BIN } : {}),
   ...(process.env.SMOKE_STATE_DIR ? { stateDir: process.env.SMOKE_STATE_DIR } : {}),
 });
-const store = new DirectorySessionStore(process.env.SMOKE_SESSIONS_DIR ?? "/sessions/agent-runtime-smoke");
+const store = new DirectorySessionStore(
+  process.env.SMOKE_SESSIONS_DIR ?? "/sessions/agent-runtime-smoke",
+);
 const limits = { wallClockMs: 60_000, cpus: 1, memoryMb: 1024 };
-record("host", true, { hostId: await provider.hostId(), uid: process.getuid(), node: process.version });
+record("host", true, {
+  hostId: await provider.hostId(),
+  uid: process.getuid(),
+  node: process.version,
+});
 
 /** A sink that prints every event and keeps them. */
 function printingSink(label) {
@@ -95,9 +113,12 @@ function run(label, prompt, overrides = {}) {
 
 // The whole workspace, kept between sandboxes: streamed as one archive, or
 // downloaded with its links.
-const workspaceStore = new DirectorySessionStore(process.env.SMOKE_SESSIONS_DIR ?? "/sessions/agent-runtime-smoke", {
-  links: true,
-});
+const workspaceStore = new DirectorySessionStore(
+  process.env.SMOKE_SESSIONS_DIR ?? "/sessions/agent-runtime-smoke",
+  {
+    links: true,
+  },
+);
 const workspaceSession = (mode) => ({
   store: workspaceStore,
   key: `${key}-workspace-${mode}`,
@@ -111,7 +132,9 @@ async function workspaceRun(check, mode, label) {
   const o = await outcome;
   const found = notice(events, "workspace");
   const archive = await stat(
-    mode === "stream" ? workspaceStore.archivePath(workspaceSession(mode).key, { gzip: true }) : workspaceStore.pathFor(workspaceSession(mode).key),
+    mode === "stream"
+      ? workspaceStore.archivePath(workspaceSession(mode).key, { gzip: true })
+      : workspaceStore.pathFor(workspaceSession(mode).key),
   ).catch(() => null);
   const ok =
     o.status === "succeeded" &&
@@ -121,10 +144,18 @@ async function workspaceRun(check, mode, label) {
         found?.toolRan === "tool ran" &&
         found.links?.join(" ") === "../../bin/tool.sh /usr/bin/env" &&
         found.bigIntact === true));
-  record(check, ok, { status: o.status, error: o.error, session: o.session, found, archiveBytes: archive?.size, ms: o.ms });
+  record(check, ok, {
+    status: o.status,
+    error: o.error,
+    session: o.session,
+    found,
+    archiveBytes: archive?.size,
+    ms: o.ms,
+  });
 }
 
-const notice = (events, kind) => events.find((e) => e.type === "notice" && e.payload.kind === kind)?.payload;
+const notice = (events, kind) =>
+  events.find((e) => e.type === "notice" && e.payload.kind === kind)?.payload;
 const turnsOf = (events) => events.find((e) => e.type === "run_started")?.payload.turns;
 
 async function exec(sandboxId, command, opts = {}) {
@@ -150,19 +181,35 @@ if (phase === "first") {
       const missing = await exec(id, ["no-such-command"]);
       record("exec.not-found-127", missing.code === 127, missing);
       const env = await exec(id, ["env"], { env: { RUN_ID: "smoke" } });
-      record("exec.env-only-what-is-passed", !env.stdout.includes("SMOKE_SECRET") && env.stdout.includes("RUN_ID=smoke"), env);
+      record(
+        "exec.env-only-what-is-passed",
+        !env.stdout.includes("SMOKE_SECRET") && env.stdout.includes("RUN_ID=smoke"),
+        env,
+      );
       const limited = await exec(id, ["sh", "-c", "ulimit -v; ulimit -p 2>/dev/null || ulimit -u"]);
       record("exec.limits", limited.stdout.trim() === `${(1024 + 1536) * 1024}\n256`, limited);
       const timeout = await exec(id, ["sleep", "30"], { timeoutMs: 2_000 });
       record("exec.timeout-124", timeout.code === 124 && timeout.ms < 6_000, timeout);
 
-      const handle = provider.exec(id, ["sh", "-c", "echo $$ > /workspace/victim.pid; exec sleep 300"]);
+      const handle = provider.exec(id, [
+        "sh",
+        "-c",
+        "echo $$ > /workspace/victim.pid; exec sleep 300",
+      ]);
       await new Promise((r) => setTimeout(r, 1_500));
       const t0 = Date.now();
       await handle.kill();
       const killedCode = await handle.done;
-      const after = await exec(id, ["sh", "-c", 'kill -0 "$(cat /workspace/victim.pid)" 2>/dev/null && echo alive || echo gone']);
-      record("exec.kill-143", killedCode === 143 && after.stdout.trim() === "gone", { killedCode, ms: Date.now() - t0, after: after.stdout.trim() });
+      const after = await exec(id, [
+        "sh",
+        "-c",
+        'kill -0 "$(cat /workspace/victim.pid)" 2>/dev/null && echo alive || echo gone',
+      ]);
+      record("exec.kill-143", killedCode === 143 && after.stdout.trim() === "gone", {
+        killedCode,
+        ms: Date.now() - t0,
+        after: after.stdout.trim(),
+      });
 
       // The bridge: kill the shim in the sandbox and see a later call still get through.
       const call = `fetch(process.env.U + "/healthz").then(async (r) => console.log(r.status, await r.text())).catch((e) => console.log("failed", e.cause?.code ?? e.message))`;
@@ -174,12 +221,23 @@ if (phase === "first") {
         afterRestart = await exec(id, ["node", "-e", call], { env: { U: provider.bridgeUrl } });
         if (afterRestart.stdout.startsWith("200")) break;
       }
-      record("bridge.restart", before.stdout.startsWith("200 ok") && afterRestart.stdout.startsWith("200 ok"), {
-        before: before.stdout.trim(),
-        afterRestart: afterRestart.stdout.trim(),
+      record(
+        "bridge.restart",
+        before.stdout.startsWith("200 ok") && afterRestart.stdout.startsWith("200 ok"),
+        {
+          before: before.stdout.trim(),
+          afterRestart: afterRestart.stdout.trim(),
+        },
+      );
+      const upload = await exec(id, [
+        "sh",
+        "-c",
+        "head -c 5000000 /dev/urandom > /workspace/big.bin && sha256sum /workspace/big.bin",
+      ]);
+      record("exec.workspace-write", upload.code === 0, {
+        ms: upload.ms,
+        out: upload.stdout.trim(),
       });
-      const upload = await exec(id, ["sh", "-c", "head -c 5000000 /dev/urandom > /workspace/big.bin && sha256sum /workspace/big.bin"]);
-      record("exec.workspace-write", upload.code === 0, { ms: upload.ms, out: upload.stdout.trim() });
     } finally {
       await provider.destroy(id);
     }
@@ -200,31 +258,54 @@ if (phase === "first") {
       ms: o.ms,
       sandboxId: o.sandboxId,
     });
-    record("run.streaming", (stream?.arrivals?.length ?? 0) > 5 && stream.arrivals.at(-1) - stream.arrivals[0] > 400, stream);
+    record(
+      "run.streaming",
+      (stream?.arrivals?.length ?? 0) > 5 && stream.arrivals.at(-1) - stream.arrivals[0] > 400,
+      stream,
+    );
     record(
       "run.no-network",
-      [iso.internet, iso.metadata, iso.metadataIp].every((r) => r.startsWith("blocked")) && iso.dns.startsWith("failed"),
+      [iso.internet, iso.metadata, iso.metadataIp].every((r) => r.startsWith("blocked")) &&
+        iso.dns.startsWith("failed"),
       { internet: iso.internet, metadata: iso.metadata, metadataIp: iso.metadataIp, dns: iso.dns },
     );
-    record("run.env", !iso.envNames.includes("SMOKE_SECRET") && iso.envNames.includes("LLM_API_KEY"), iso.envNames);
-    record("run.sessions-hidden", Array.isArray(iso.hiddenSessions) && iso.hiddenSessions.length === 0, iso.hiddenSessions);
+    record(
+      "run.env",
+      !iso.envNames.includes("SMOKE_SECRET") && iso.envNames.includes("LLM_API_KEY"),
+      iso.envNames,
+    );
+    record(
+      "run.sessions-hidden",
+      Array.isArray(iso.hiddenSessions) && iso.hiddenSessions.length === 0,
+      iso.hiddenSessions,
+    );
     record("run.limits", true, iso.limits);
-    record("gateway.upstream-key", upstream.requests.at(-1)?.headers["x-api-key"] === "smoke-upstream-key", {
-      runTokenSent: upstream.requests.some((r) => String(r.headers["x-api-key"]).startsWith("rt_")),
-    });
+    record(
+      "gateway.upstream-key",
+      upstream.requests.at(-1)?.headers["x-api-key"] === "smoke-upstream-key",
+      {
+        runTokenSent: upstream.requests.some((r) =>
+          String(r.headers["x-api-key"]).startsWith("rt_"),
+        ),
+      },
+    );
   });
 
   await step("run.second", async () => {
     const { outcome, events } = run("second", "second question");
     const o = await outcome;
     const turns = turnsOf(events);
-    record("run.session-restored", o.status === "succeeded" && o.session?.restored === true && turns === firstTurns + 1, {
-      turns,
-      firstTurns,
-      session: o.session,
-      ms: o.ms,
-      sandboxId: o.sandboxId,
-    });
+    record(
+      "run.session-restored",
+      o.status === "succeeded" && o.session?.restored === true && turns === firstTurns + 1,
+      {
+        turns,
+        firstTurns,
+        session: o.session,
+        ms: o.ms,
+        sandboxId: o.sandboxId,
+      },
+    );
   });
 
   await step("run.cancel", async () => {
@@ -232,7 +313,8 @@ if (phase === "first") {
     const { outcome, events } = run("cancel", "sleep", { signal: stop.signal });
     let settled = false;
     outcome.finally(() => (settled = true)).catch(() => {});
-    while (!settled && !events.some((e) => e.type === "notice")) await new Promise((r) => setTimeout(r, 100));
+    while (!settled && !events.some((e) => e.type === "notice"))
+      await new Promise((r) => setTimeout(r, 100));
     const t0 = Date.now();
     stop.abort();
     const o = await outcome;
@@ -247,21 +329,30 @@ if (phase === "first") {
   await step("run.timeout", async () => {
     const { outcome } = run("timeout", "sleep", { limits: { ...limits, wallClockMs: 8_000 } });
     const o = await outcome;
-    record("run.timeout", o.status === "failed" && /time limit/.test(o.error ?? "") && o.ms < 25_000, {
-      status: o.status,
-      error: o.error,
-      ms: o.ms,
-    });
+    record(
+      "run.timeout",
+      o.status === "failed" && /time limit/.test(o.error ?? "") && o.ms < 25_000,
+      {
+        status: o.status,
+        error: o.error,
+        ms: o.ms,
+      },
+    );
   });
 
   await step("run.crash", async () => {
     const { outcome } = run("crash", "exit:3");
     const o = await outcome;
-    record("run.crash", o.status === "failed" && /exiting 3/.test(o.error ?? ""), { status: o.status, error: o.error });
+    record("run.crash", o.status === "failed" && /exiting 3/.test(o.error ?? ""), {
+      status: o.status,
+      error: o.error,
+    });
   });
 
   for (const mode of ["stream", "links"]) {
-    await step(`workspace.${mode}.make`, () => workspaceRun(`workspace.${mode}.make`, mode, `workspace-${mode}-make`));
+    await step(`workspace.${mode}.make`, () =>
+      workspaceRun(`workspace.${mode}.make`, mode, `workspace-${mode}-make`),
+    );
     await step(`workspace.${mode}.restored`, () =>
       workspaceRun(`workspace.${mode}.restored`, mode, `workspace-${mode}-check`),
     );
@@ -286,7 +377,12 @@ if (phase === "first") {
 
 record("leftovers", (await provider.list()).length === 0, await provider.list());
 console.log(
-  ["SUMMARY", ...results.map((r) => `${r.ok === true ? "pass" : r.ok === false ? "FAIL" : "info"}  ${r.check}`)].join("\n"),
+  [
+    "SUMMARY",
+    ...results.map(
+      (r) => `${r.ok === true ? "pass" : r.ok === false ? "FAIL" : "info"}  ${r.check}`,
+    ),
+  ].join("\n"),
 );
 console.log("SMOKE-END");
 await gateway.close();

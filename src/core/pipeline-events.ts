@@ -84,7 +84,10 @@ export type PipelineEvents = {
    */
   artifact: (artifact: PipelineArtifact) => Promise<string | null>;
   /** `turn_end` carrying one model call's usage, which the trace sums. */
-  usage: (usage: PipelineUsage, extra?: { model?: string; stopReason?: string; step?: string }) => void;
+  usage: (
+    usage: PipelineUsage,
+    extra?: { model?: string; stopReason?: string; step?: string },
+  ) => void;
   /** `run_finished`, then sends what is left. Once per run, when it ends; not on a pause. */
   finish: (ending?: { error?: string; followUps?: readonly string[] }) => Promise<SinkState>;
   /** Sends what is pending and resolves with the sink's latest answer. */
@@ -115,7 +118,10 @@ function defaultErrorResult(error: unknown): string {
  * and logged, as executeRun does. The pipeline's own work goes on either way;
  * read `state` to stop it on a cancel.
  */
-export function createPipelineEvents(sink: EventSink, options: PipelineEventsOptions = {}): PipelineEvents {
+export function createPipelineEvents(
+  sink: EventSink,
+  options: PipelineEventsOptions = {},
+): PipelineEvents {
   const batchMs = options.batchMs ?? 150;
   const batchEvents = options.batchEvents ?? 25;
   const retries = options.retries ?? 4;
@@ -257,7 +263,10 @@ export function createPipelineEvents(sink: EventSink, options: PipelineEventsOpt
     },
 
     usage(usage, extra = {}) {
-      emit("turn_end", { usage: { ...usage, ...(usage.cost ? { cost: { ...usage.cost } } : {}) }, ...extra });
+      emit("turn_end", {
+        usage: { ...usage, ...(usage.cost ? { cost: { ...usage.cost } } : {}) },
+        ...extra,
+      });
     },
 
     async finish(ending = {}) {

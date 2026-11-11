@@ -25,19 +25,36 @@ describe("createPipelineEvents", () => {
       "framing",
       async () => {
         trace.usage(
-          turnUsage({ inputTokens: 1_000, outputTokens: 200, reasoningTokens: 50, cacheReadTokens: 0, cacheWriteTokens: 0 }, pricing),
+          turnUsage(
+            {
+              inputTokens: 1_000,
+              outputTokens: 200,
+              reasoningTokens: 50,
+              cacheReadTokens: 0,
+              cacheWriteTokens: 0,
+            },
+            pricing,
+          ),
           { model: "gpt-6.1-sol", step: "framing" },
         );
         return { issues: 3 };
       },
-      { args: { question: "Is the clause enforceable?" }, result: (value) => `${value.issues} issues framed` },
+      {
+        args: { question: "Is the clause enforceable?" },
+        result: (value) => `${value.issues} issues framed`,
+      },
     );
     expect(frame).toEqual({ issues: 3 });
     await trace.step("retrieval", async (step) => {
       step.setResult("12 passages from corpus 2026-10-01");
     });
     trace.notice("paused_for_review", "Waiting for the evidence review.");
-    await trace.artifact({ artifactId: "memo-1", path: "research-memo.md", caption: "Draft memo", kind: "report" });
+    await trace.artifact({
+      artifactId: "memo-1",
+      path: "research-memo.md",
+      caption: "Draft memo",
+      kind: "report",
+    });
     trace.text("The clause is likely enforceable.");
     const state = await trace.finish();
 
@@ -66,8 +83,19 @@ describe("createPipelineEvents", () => {
         durationMs: 1_000,
         result: "12 passages from corpus 2026-10-01",
       },
-      { kind: "notice", id: "notice-6", noticeKind: "paused_for_review", message: "Waiting for the evidence review." },
-      { kind: "artifact", id: "artifact-7", artifactId: "memo-1", path: "research-memo.md", caption: "Draft memo" },
+      {
+        kind: "notice",
+        id: "notice-6",
+        noticeKind: "paused_for_review",
+        message: "Waiting for the evidence review.",
+      },
+      {
+        kind: "artifact",
+        id: "artifact-7",
+        artifactId: "memo-1",
+        path: "research-memo.md",
+        caption: "Draft memo",
+      },
       { kind: "text", id: "text-8", text: "The clause is likely enforceable." },
     ]);
     expect(view.usage).toMatchObject({
@@ -86,20 +114,28 @@ describe("createPipelineEvents", () => {
   it("marks a step that threw as an error, showing a safe code and never the message", async () => {
     const sink = new FakeSink();
     const trace = createPipelineEvents(sink, fast);
-    const failure = Object.assign(new Error("Kimi refused: prompt quoted the client's name"), { safeCode: "model_output_invalid" });
-    await expect(trace.step("memo_drafting", async () => Promise.reject(failure))).rejects.toBe(failure);
+    const failure = Object.assign(new Error("Kimi refused: prompt quoted the client's name"), {
+      safeCode: "model_output_invalid",
+    });
+    await expect(trace.step("memo_drafting", async () => Promise.reject(failure))).rejects.toBe(
+      failure,
+    );
     await expect(
       trace.step("source_audit", () => {
         throw new Error("secret detail");
       }),
     ).rejects.toThrow("secret detail");
     await expect(
-      trace.step("verification", () => Promise.reject(new Error("x")), { errorResult: () => "fact check unavailable" }),
+      trace.step("verification", () => Promise.reject(new Error("x")), {
+        errorResult: () => "fact check unavailable",
+      }),
     ).rejects.toThrow();
     await trace.finish({ error: "model_output_invalid" });
 
     const view = foldRunEvents(sink.sent, "failed");
-    expect(view.items.map((item) => item.kind === "tool" && [item.name, item.status, item.result])).toEqual([
+    expect(
+      view.items.map((item) => item.kind === "tool" && [item.name, item.status, item.result]),
+    ).toEqual([
       ["memo_drafting", "error", "model_output_invalid"],
       ["source_audit", "error", "failed"],
       ["verification", "error", "fact check unavailable"],
@@ -137,7 +173,11 @@ describe("createPipelineEvents", () => {
     const trace = createPipelineEvents(sink, { batchMs: 10_000, batchEvents: 3, retryMs: 1 });
     for (let i = 0; i < 7; i++) trace.notice("progress", `step ${i}`);
     await trace.flush();
-    expect(sink.batches.map((batch) => batch.map((e) => e.seq))).toEqual([[0, 1, 2], [3, 4, 5], [6]]);
+    expect(sink.batches.map((batch) => batch.map((e) => e.seq))).toEqual([
+      [0, 1, 2],
+      [3, 4, 5],
+      [6],
+    ]);
     expect(sink.lines).toEqual(["retrying 3 pipeline event(s): Error: connection lost"]);
   });
 
@@ -186,7 +226,15 @@ describe("createPipelineEvents", () => {
     const trace = createPipelineEvents(sink, fast);
     const bytes = new TextEncoder().encode("# Memo");
     const id = await trace.artifact({
-      upload: { kind: "report", fileName: "memo.md", caption: "Memo", mediaType: "text/markdown", sha256: "abc", size: bytes.length, bytes },
+      upload: {
+        kind: "report",
+        fileName: "memo.md",
+        caption: "Memo",
+        mediaType: "text/markdown",
+        sha256: "abc",
+        size: bytes.length,
+        bytes,
+      },
     });
     await trace.finish();
     expect(id).toBeNull();
@@ -201,7 +249,15 @@ describe("createPipelineEvents", () => {
     const trace = createPipelineEvents(sink, fast);
     const bytes = new TextEncoder().encode("# Memo");
     const id = await trace.artifact({
-      upload: { kind: "report", fileName: "memo.md", caption: "Memo", mediaType: "text/markdown", sha256: "abc", size: bytes.length, bytes },
+      upload: {
+        kind: "report",
+        fileName: "memo.md",
+        caption: "Memo",
+        mediaType: "text/markdown",
+        sha256: "abc",
+        size: bytes.length,
+        bytes,
+      },
     });
     await trace.finish();
     expect(id).toBe("artifact-1");
@@ -219,7 +275,9 @@ describe("createPipelineEvents", () => {
     trace.notice("late", "too late");
     await trace.flush();
     expect(sink.sent.map((e) => e.type)).toEqual(["run_finished"]);
-    expect(foldRunEvents(sink.sent, "succeeded").followUps).toEqual(["Check the limitation period?"]);
+    expect(foldRunEvents(sink.sent, "succeeded").followUps).toEqual([
+      "Check the limitation period?",
+    ]);
     expect(sink.lines).toEqual(["dropped a notice event written after run_finished"]);
   });
 });

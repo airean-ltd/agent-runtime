@@ -28,7 +28,8 @@ class MemoryStore implements SessionStore {
   async save(key: string, from: string): Promise<void> {
     this.log.push(`save ${key}`);
     const files: Record<string, string> = {};
-    for (const name of await readdir(from)) files[name] = await readFile(path.join(from, name), "utf8");
+    for (const name of await readdir(from))
+      files[name] = await readFile(path.join(from, name), "utf8");
     this.saved.set(key, files);
   }
 
@@ -42,7 +43,11 @@ class MemoryStore implements SessionStore {
   }
 }
 
-function start(provider: FakeSandboxProvider, store: SessionStore, overrides: Partial<ExecuteRunOptions> = {}) {
+function start(
+  provider: FakeSandboxProvider,
+  store: SessionStore,
+  overrides: Partial<ExecuteRunOptions> = {},
+) {
   const sink = new FakeSink();
   const outcome = executeRun({
     provider,
@@ -78,7 +83,12 @@ describe("executeRun with a session store", () => {
     expect(second.fs.get("/workspace/.sessions/s.jsonl")?.toString()).toBe('{"turn":1}\n');
     expect(second.execs.at(-1)).toEqual(["node", "runner.js"]);
     expect(second.execs.findIndex((c) => c[0] === "sh")).toBeLessThan(second.execs.length - 1);
-    expect(store.log).toEqual(["restore thread_1", "save thread_1", "restore thread_1", "save thread_1"]);
+    expect(store.log).toEqual([
+      "restore thread_1",
+      "save thread_1",
+      "restore thread_1",
+      "save thread_1",
+    ]);
   });
 
   it("saves the session of a run that was cancelled or failed", async () => {
@@ -112,7 +122,9 @@ describe("executeRun with a session store", () => {
     const result = await outcome;
     expect(result.session).toEqual({ restored: false, saved: false });
     expect(store.log).toEqual(["restore thread_1"]);
-    expect(sink.lines.some((l) => l.startsWith("no session to save at /workspace/.sessions"))).toBe(true);
+    expect(sink.lines.some((l) => l.startsWith("no session to save at /workspace/.sessions"))).toBe(
+      true,
+    );
   });
 
   it("fails the run, and builds no runner, when the store cannot be read", async () => {
@@ -142,15 +154,23 @@ describe("executeRun with a session store", () => {
       ...ANSWER,
       files: { "/workspace/.sessions/s.jsonl": "live\n" },
     });
-    const result = await start(provider, store, { resumeSandboxId: "sbx-thread", keepSandbox: true }).outcome;
+    const result = await start(provider, store, {
+      resumeSandboxId: "sbx-thread",
+      keepSandbox: true,
+    }).outcome;
     expect(result).toMatchObject({ created: false, session: { restored: false, saved: true } });
     expect(store.saved.get("thread_1")).toEqual({ "s.jsonl": "live\n" });
   });
 
   it("round-trips through a DirectorySessionStore", async () => {
-    const store = new DirectorySessionStore(await mkdtemp(path.join(tmpdir(), "agent-runtime-sessions-")));
+    const store = new DirectorySessionStore(
+      await mkdtemp(path.join(tmpdir(), "agent-runtime-sessions-")),
+    );
     await start(
-      new FakeSandboxProvider({ ...ANSWER, files: { "/workspace/.sessions/a/s.jsonl": "turn 1\n" } }),
+      new FakeSandboxProvider({
+        ...ANSWER,
+        files: { "/workspace/.sessions/a/s.jsonl": "turn 1\n" },
+      }),
       store,
     ).outcome;
     const next = new FakeSandboxProvider(ANSWER);
@@ -172,7 +192,9 @@ describe("executeRun with a mounted directory", () => {
       command: ["node", "runner.js"],
       image: "runner",
       limits: LIMITS,
-      mounts: [{ localDir, remoteDir: "/data", mounted: true, verify: { "data.duckdb": "upload-hash" } }],
+      mounts: [
+        { localDir, remoteDir: "/data", mounted: true, verify: { "data.duckdb": "upload-hash" } },
+      ],
     });
     expect(provider.creates[0]?.binds).toEqual([{ localDir, remoteDir: "/data" }]);
     expect(provider.calls).not.toContain("upload");
@@ -204,7 +226,11 @@ class LinkingProvider extends FakeSandboxProvider {
     this.target = target;
   }
 
-  override async download(_sandboxId: string, remotePath: string, localPath: string): Promise<void> {
+  override async download(
+    _sandboxId: string,
+    remotePath: string,
+    localPath: string,
+  ): Promise<void> {
     this.calls.push(`download ${remotePath}`);
     const { symlink } = await import("node:fs/promises");
     await symlink(this.target, path.join(localPath, path.posix.basename(remotePath)));
@@ -241,8 +267,17 @@ describe("executeRun copying out of any sandbox", () => {
 
 describe("executeRun keeping the whole workspace", () => {
   it("saves the workspace without what exclude names, and restores it into the next sandbox", async () => {
-    const store = new DirectorySessionStore(await mkdtemp(path.join(tmpdir(), "agent-runtime-store-")), { links: true });
-    const session = { store, key: "thread_1", remoteDir: "/workspace", links: true, exclude: ["outputs", ".cache/pip"] };
+    const store = new DirectorySessionStore(
+      await mkdtemp(path.join(tmpdir(), "agent-runtime-store-")),
+      { links: true },
+    );
+    const session = {
+      store,
+      key: "thread_1",
+      remoteDir: "/workspace",
+      links: true,
+      exclude: ["outputs", ".cache/pip"],
+    };
     const first = new FakeSandboxProvider({
       ...ANSWER,
       files: {
@@ -253,19 +288,28 @@ describe("executeRun keeping the whole workspace", () => {
         "/workspace/.cache/keep": "small",
       },
     });
-    expect((await start(first, store, { session }).outcome).session).toEqual({ restored: false, saved: true });
+    expect((await start(first, store, { session }).outcome).session).toEqual({
+      restored: false,
+      saved: true,
+    });
 
     const second = new FakeSandboxProvider(ANSWER);
     expect((await start(second, store, { session }).outcome).session?.restored).toBe(true);
     const restored = [...second.fs.keys()].filter((p) => p.startsWith("/workspace/")).sort();
-    expect(restored).toEqual(["/workspace/.cache/keep", "/workspace/.sessions/s.jsonl", "/workspace/notes.txt"]);
+    expect(restored).toEqual([
+      "/workspace/.cache/keep",
+      "/workspace/.sessions/s.jsonl",
+      "/workspace/notes.txt",
+    ]);
   });
 
   it("refuses an exclude outside the session before building anything", async () => {
     for (const exclude of ["../etc", "/etc", "."]) {
       const provider = new FakeSandboxProvider(ANSWER);
       const session = { store: new MemoryStore(), key: "thread_1", exclude: [exclude] };
-      await expect(start(provider, session.store, { session }).outcome).rejects.toThrow("session.exclude must name paths inside");
+      await expect(start(provider, session.store, { session }).outcome).rejects.toThrow(
+        "session.exclude must name paths inside",
+      );
       expect(provider.calls).toEqual([]);
     }
   });
@@ -281,9 +325,18 @@ describe("executeRun streaming the session", () => {
   it("moves the workspace as one archive the job never unpacks, gzipped by default", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "agent-runtime-store-"));
     const store = new DirectorySessionStore(root);
-    const session = { store, key: "thread_1", remoteDir: "/workspace", stream: true, exclude: ["outputs"] };
+    const session = {
+      store,
+      key: "thread_1",
+      remoteDir: "/workspace",
+      stream: true,
+      exclude: ["outputs"],
+    };
     const first = new FakeSandboxProvider({ ...ANSWER, files });
-    expect((await start(first, store, { session }).outcome).session).toEqual({ restored: false, saved: true });
+    expect((await start(first, store, { session }).outcome).session).toEqual({
+      restored: false,
+      saved: true,
+    });
     expect(first.calls).toContain("pack /workspace");
     expect(first.calls.some((c) => c.startsWith("download"))).toBe(false);
     expect(await readdir(root)).toEqual(["thread_1.tar.gz"]);
@@ -308,11 +361,17 @@ describe("executeRun streaming the session", () => {
     wiped.unpackDir = async () => {};
     const empty = await start(wiped, store, { session });
     expect((await empty.outcome).session?.saved).toBe(false);
-    expect(empty.sink.lines.some((l) => l.startsWith("no session to save at /workspace"))).toBe(true);
-    const big = await start(new FakeSandboxProvider({ ...ANSWER, files: { "/workspace/big": "x".repeat(50_000) } }), store, {
-      // Read back the stored archive first, which is smaller than the cap.
-      session: { ...session, maxBytes: 20_000 },
-    });
+    expect(empty.sink.lines.some((l) => l.startsWith("no session to save at /workspace"))).toBe(
+      true,
+    );
+    const big = await start(
+      new FakeSandboxProvider({ ...ANSWER, files: { "/workspace/big": "x".repeat(50_000) } }),
+      store,
+      {
+        // Read back the stored archive first, which is smaller than the cap.
+        session: { ...session, maxBytes: 20_000 },
+      },
+    );
     expect((await big.outcome).session?.saved).toBe(false);
     expect(big.sink.lines.some((l) => l.includes("more than 20000 bytes"))).toBe(true);
     expect(await readFile(path.join(root, "thread_1.tar"))).toEqual(stored);
@@ -322,12 +381,15 @@ describe("executeRun streaming the session", () => {
   it("refuses to start with a store that cannot hold archives, or a wildcard exclude", async () => {
     const provider = new FakeSandboxProvider(ANSWER);
     const store = new MemoryStore();
-    await expect(start(provider, store, { session: { store, key: "t", stream: true } }).outcome).rejects.toThrow(
-      "session.stream needs",
-    );
-    const dir = new DirectorySessionStore(await mkdtemp(path.join(tmpdir(), "agent-runtime-store-")));
     await expect(
-      start(provider, dir, { session: { store: dir, key: "t", stream: true, exclude: ["*.log"] } }).outcome,
+      start(provider, store, { session: { store, key: "t", stream: true } }).outcome,
+    ).rejects.toThrow("session.stream needs");
+    const dir = new DirectorySessionStore(
+      await mkdtemp(path.join(tmpdir(), "agent-runtime-store-")),
+    );
+    await expect(
+      start(provider, dir, { session: { store: dir, key: "t", stream: true, exclude: ["*.log"] } })
+        .outcome,
     ).rejects.toThrow("session.exclude must name paths inside");
     expect(provider.calls).toEqual([]);
   });

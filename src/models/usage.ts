@@ -31,7 +31,13 @@ export type ModelPricing = {
 export type TurnUsage = Omit<RunUsage, "turns">;
 
 export function emptyModelUsage(): ModelUsage {
-  return { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
+  return {
+    inputTokens: 0,
+    outputTokens: 0,
+    reasoningTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+  };
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -95,7 +101,8 @@ export function addModelUsage(a: ModelUsage, b: ModelUsage): ModelUsage {
   };
 }
 
-const usd = (tokens: number, perMillion: number) => Number(((tokens * perMillion) / 1_000_000).toFixed(8));
+const usd = (tokens: number, perMillion: number) =>
+  Number(((tokens * perMillion) / 1_000_000).toFixed(8));
 
 /**
  * The call's cost in US dollars. Output is priced over output and reasoning
@@ -118,7 +125,13 @@ export function modelCost(usage: ModelUsage, pricing: ModelPricing): TurnUsage["
     usage.cacheWriteTokens,
     pricing.cacheWriteUsdPerMillionTokens ?? pricing.inputUsdPerMillionTokens,
   );
-  return { input, output, cacheRead, cacheWrite, total: Number((input + output + cacheRead + cacheWrite).toFixed(8)) };
+  return {
+    input,
+    output,
+    cacheRead,
+    cacheWrite,
+    total: Number((input + output + cacheRead + cacheWrite).toFixed(8)),
+  };
 }
 
 /**

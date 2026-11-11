@@ -22,12 +22,17 @@ import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import path from "node:path";
 
-import { createGatewayHandler, type GatewayGrant, type GatewayUpstream } from "./gateway-handler.ts";
+import {
+  createGatewayHandler,
+  type GatewayGrant,
+  type GatewayUpstream,
+} from "./gateway-handler.ts";
 
 function upstreamFromEnv(env: NodeJS.ProcessEnv): GatewayUpstream {
   const format = env.UPSTREAM_FORMAT || "anthropic";
   if (format === "openai") {
-    if (!env.UPSTREAM_BASE_URL) throw new Error("UPSTREAM_BASE_URL is required when UPSTREAM_FORMAT=openai");
+    if (!env.UPSTREAM_BASE_URL)
+      throw new Error("UPSTREAM_BASE_URL is required when UPSTREAM_FORMAT=openai");
     return { format, baseUrl: env.UPSTREAM_BASE_URL };
   }
   if (format !== "anthropic") throw new Error("UPSTREAM_FORMAT must be anthropic or openai");

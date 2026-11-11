@@ -42,8 +42,18 @@ describe("modelEndpoint", () => {
   });
 
   it("takes an OpenAI URL as the base or the full chat completions endpoint", () => {
-    for (const url of ["https://api.lel190.dev/v1", "https://api.lel190.dev/v1/chat/completions/"]) {
-      expect(modelEndpoint({ format: "openai-compatible", url, model: " gpt-6-luna ", apiKeyEnv: "KIMI_API_KEY" })).toEqual({
+    for (const url of [
+      "https://api.lel190.dev/v1",
+      "https://api.lel190.dev/v1/chat/completions/",
+    ]) {
+      expect(
+        modelEndpoint({
+          format: "openai-compatible",
+          url,
+          model: " gpt-6-luna ",
+          apiKeyEnv: "KIMI_API_KEY",
+        }),
+      ).toEqual({
         format: "openai",
         baseUrl: "https://api.lel190.dev/v1",
         model: "gpt-6-luna",
@@ -54,28 +64,52 @@ describe("modelEndpoint", () => {
 
   it("refuses a URL that is not http(s), carries credentials, or a blank model", () => {
     expect(() => modelEndpoint({ format: "openai", url: "ftp://x", model: "m" })).toThrow(/http/);
-    expect(() => modelEndpoint({ format: "openai", url: "https://k:s@x/v1", model: "m" })).toThrow(/credentials/);
-    expect(() => modelEndpoint({ format: "openai", url: "https://x/v1", model: " " })).toThrow(/Model id/);
+    expect(() => modelEndpoint({ format: "openai", url: "https://k:s@x/v1", model: "m" })).toThrow(
+      /credentials/,
+    );
+    expect(() => modelEndpoint({ format: "openai", url: "https://x/v1", model: " " })).toThrow(
+      /Model id/,
+    );
   });
 
   it("reads the variables an app names, with its defaults", () => {
-    const names = { format: "MODEL_FORMAT", url: "MODEL_BASE_URL", model: "MODEL_ID", apiKey: "KIMI_API_KEY" };
-    const defaults = { format: "openai", url: "https://api.lel190.dev/v1", model: "gpt-6-luna", provider: "hkjc-chat" };
-    expect(modelEndpointFromEnv({ MODEL_ID: "gpt-6-sol", MODEL_BASE_URL: " " }, names, defaults)).toEqual({
+    const names = {
+      format: "MODEL_FORMAT",
+      url: "MODEL_BASE_URL",
+      model: "MODEL_ID",
+      apiKey: "KIMI_API_KEY",
+    };
+    const defaults = {
+      format: "openai",
+      url: "https://api.lel190.dev/v1",
+      model: "gpt-6-luna",
+      provider: "hkjc-chat",
+    };
+    expect(
+      modelEndpointFromEnv({ MODEL_ID: "gpt-6-sol", MODEL_BASE_URL: " " }, names, defaults),
+    ).toEqual({
       format: "openai",
       baseUrl: "https://api.lel190.dev/v1",
       model: "gpt-6-sol",
       apiKeyEnv: "KIMI_API_KEY",
       provider: "hkjc-chat",
     });
-    expect(() => modelEndpointFromEnv({}, { format: "KIMI_API_FORMAT", url: "KIMI_CODE_API_URL", model: "M" })).toThrow(
-      "KIMI_API_FORMAT is not configured",
-    );
+    expect(() =>
+      modelEndpointFromEnv({}, { format: "KIMI_API_FORMAT", url: "KIMI_CODE_API_URL", model: "M" }),
+    ).toThrow("KIMI_API_FORMAT is not configured");
   });
 
   it("derives where calls go and the base an SDK wants", () => {
-    const anthropic = modelEndpoint({ format: "anthropic", url: "https://api.kimi.com/coding/v1", model: "k" });
-    const openai = modelEndpoint({ format: "openai", url: "https://api.lel190.dev/v1", model: "g" });
+    const anthropic = modelEndpoint({
+      format: "anthropic",
+      url: "https://api.kimi.com/coding/v1",
+      model: "k",
+    });
+    const openai = modelEndpoint({
+      format: "openai",
+      url: "https://api.lel190.dev/v1",
+      model: "g",
+    });
     expect(endpointUrl(anthropic)).toBe("https://api.kimi.com/coding/v1/messages");
     expect(sdkBaseUrl(anthropic)).toBe("https://api.kimi.com/coding/v1");
     expect(endpointUrl(openai)).toBe("https://api.lel190.dev/v1/chat/completions");
@@ -95,7 +129,12 @@ describe("ModelEndpoint", () => {
   it("has the gateway's upstream shape, so it spreads into the gateway and a Docker LlmConfig", () => {
     expectTypeOf<ModelUpstream>().toEqualTypeOf<GatewayUpstream>();
     expectTypeOf<ModelEndpoint>().toExtend<GatewayUpstream>();
-    const endpoint = modelEndpoint({ format: "openai", url: "https://x/v1", model: "m", provider: "p" });
+    const endpoint = modelEndpoint({
+      format: "openai",
+      url: "https://x/v1",
+      model: "m",
+      provider: "p",
+    });
     const llm: LlmConfig = { ...endpoint, provider: endpoint.provider ?? "p", apiKey: "k" };
     expect(llm).toMatchObject({ format: "openai", baseUrl: "https://x/v1", model: "m" });
   });

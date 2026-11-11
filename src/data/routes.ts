@@ -51,7 +51,9 @@ export type DataRoutesOptions<T extends DataCommands> = {
 
 const fail = (status: number, error: string): DataReply => ({ status, body: { error } });
 
-export function createDataRoutes<T extends DataCommands>(opts: DataRoutesOptions<T>): GatewayDataRoutes {
+export function createDataRoutes<T extends DataCommands>(
+  opts: DataRoutesOptions<T>,
+): GatewayDataRoutes {
   const maxCalls = opts.maxCallsPerRun ?? 50;
   const timeoutMs = opts.timeoutMs ?? 20_000;
   const maxChars = opts.maxResultChars ?? 256 * 1024;
@@ -65,7 +67,13 @@ export function createDataRoutes<T extends DataCommands>(opts: DataRoutesOptions
     async call(command, input, grant) {
       const started = Date.now();
       const done = (reply: DataReply, extra: Record<string, unknown> = {}): DataReply => {
-        log({ runId: grant.runId, command, status: reply.status, ms: Date.now() - started, ...extra });
+        log({
+          runId: grant.runId,
+          command,
+          status: reply.status,
+          ms: Date.now() - started,
+          ...extra,
+        });
         return reply;
       };
       const spec = Object.hasOwn(opts.commands, command) ? opts.commands[command] : undefined;
@@ -81,7 +89,8 @@ export function createDataRoutes<T extends DataCommands>(opts: DataRoutesOptions
       let timer: ReturnType<typeof setTimeout> | undefined;
       const timeout = new Promise<never>((_, reject) => {
         timer = setTimeout(
-          () => reject(new DataCommandError(`${command} took longer than ${timeoutMs / 1000} s.`, 504)),
+          () =>
+            reject(new DataCommandError(`${command} took longer than ${timeoutMs / 1000} s.`, 504)),
           timeoutMs,
         );
       });

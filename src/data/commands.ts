@@ -38,7 +38,8 @@ export function defineDataCommands<const T extends DataCommands>(commands: T): T
     if (!NAME.test(name)) throw new Error(`Data command "${name}" must be lower-case kebab-case`);
     if (!spec.description) throw new Error(`Data command "${name}" needs a description`);
     for (const [arg, argSpec] of Object.entries(spec.args ?? {})) {
-      if (!NAME.test(arg)) throw new Error(`${name}: argument "${arg}" must be lower-case kebab-case`);
+      if (!NAME.test(arg))
+        throw new Error(`${name}: argument "${arg}" must be lower-case kebab-case`);
       if (argSpec.default !== undefined && typeof argSpec.default !== argSpec.type) {
         throw new Error(`${name}: the default for "${arg}" is not a ${argSpec.type}`);
       }
@@ -117,7 +118,9 @@ export function dataPromptSection(list: DataCommandList): string {
         return arg.required ? flag : `[${flag}]`;
       })
       .join(" ");
-    lines.push(`- \`agent-data ${command.name}${usage ? ` ${usage}` : ""}\`: ${command.description}`);
+    lines.push(
+      `- \`agent-data ${command.name}${usage ? ` ${usage}` : ""}\`: ${command.description}`,
+    );
     for (const arg of command.args) {
       if (!arg.description) continue;
       const fallback = arg.default !== undefined ? ` (default ${String(arg.default)})` : "";

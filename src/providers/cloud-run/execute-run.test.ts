@@ -30,9 +30,14 @@ beforeEach(async () => {
   cli = await createFakeSandboxCli();
   upstream = await startFakeUpstream({
     apiKey: "sk-provider",
-    reply: (body) => `Turn for ${JSON.stringify((body.messages as { content: string }[])[0]?.content)}.`,
+    reply: (body) =>
+      `Turn for ${JSON.stringify((body.messages as { content: string }[])[0]?.content)}.`,
   });
-  gateway = createInProcessGateway({ messagesUrl: upstream.messagesUrl, apiKey: "sk-provider", log: () => {} });
+  gateway = createInProcessGateway({
+    messagesUrl: upstream.messagesUrl,
+    apiKey: "sk-provider",
+    log: () => {},
+  });
 });
 
 afterEach(async () => {
@@ -57,7 +62,9 @@ async function setup() {
     bridge: { port: await freePort(), onConnection: gateway.connect },
     killGraceMs: 2_000,
   });
-  const store = new DirectorySessionStore(await mkdtemp(path.join(tmpdir(), "agent-runtime-sessions-")));
+  const store = new DirectorySessionStore(
+    await mkdtemp(path.join(tmpdir(), "agent-runtime-sessions-")),
+  );
   const run = (prompt: string, overrides: Partial<ExecuteRunOptions> = {}) => {
     const sink = new FakeSink();
     const outcome = executeRun({
@@ -105,7 +112,10 @@ describe("executeRun on Cloud Run", { timeout: 60_000 }, () => {
     // Each sandbox and its bridge are gone once its run is.
     expect(await cli.sandboxes()).toEqual([]);
     // The model saw the provider key, never a run token; the runner never saw the key.
-    expect(upstream.requests.map((r) => r.headers["x-api-key"])).toEqual(["sk-provider", "sk-provider"]);
+    expect(upstream.requests.map((r) => r.headers["x-api-key"])).toEqual([
+      "sk-provider",
+      "sk-provider",
+    ]);
     const runCalls = (await cli.calls()).filter((args) => args[0] === "run");
     expect(runCalls).toHaveLength(2);
     expect(runCalls.flat()).not.toContain("--allow-egress");
@@ -134,7 +144,8 @@ describe("executeRun on Cloud Run", { timeout: 60_000 }, () => {
 
   it("fails a run at its time limit", async () => {
     const { run } = await setup();
-    const result = await run("sleep", { limits: { wallClockMs: 1_500, cpus: 1, memoryMb: 512 } }).outcome;
+    const result = await run("sleep", { limits: { wallClockMs: 1_500, cpus: 1, memoryMb: 512 } })
+      .outcome;
     expect(result.status).toBe("failed");
     expect(result.error).toMatch(/time limit/);
   });
