@@ -142,7 +142,11 @@ async function run(options: RunnerOptions, emit: EmitRunEvent): Promise<void> {
     process.env.AGENT_DATA_URL = data.url;
     process.env.AGENT_DATA_TOKEN = data.token;
   }
-  const dataSection = !data ? "" : dataAsTools ? dataToolsPromptSection(data.list) : dataPromptSection(data.list);
+  const dataSection = !data
+    ? ""
+    : dataAsTools
+      ? dataToolsPromptSection(data.list)
+      : dataPromptSection(data.list);
   const systemPrompt = [options.systemPrompt(ctx), dataSection].filter(Boolean).join("\n\n");
 
   // No discovery: no AGENTS.md, skills, extensions or prompt templates from
@@ -165,7 +169,10 @@ async function run(options: RunnerOptions, emit: EmitRunEvent): Promise<void> {
     ...(options.customTools?.(ctx) ?? []),
     ...(data && dataAsTools ? createDataTools(data, options.fetch) : []),
   ];
-  const names = [...(options.builtinTools ?? BUILTIN_TOOLS), ...customTools.map((tool) => tool.name)];
+  const names = [
+    ...(options.builtinTools ?? BUILTIN_TOOLS),
+    ...customTools.map((tool) => tool.name),
+  ];
   const clash = names.find((name, i) => names.indexOf(name) !== i);
   if (clash) throw new Error(`Two tools are named ${clash}`);
   // Session JSONL lives in the workspace so a paused sandbox keeps it and the

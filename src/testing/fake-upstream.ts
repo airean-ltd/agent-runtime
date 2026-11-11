@@ -103,7 +103,11 @@ export function chatCompletionEvents(text: string): string[] {
     ...words.map((word) => chunk({ delta: { content: word }, finish_reason: null })),
     chunk({ delta: {}, finish_reason: "stop" }),
     chunk(null, {
-      usage: { prompt_tokens: 10, completion_tokens: words.length, total_tokens: 10 + words.length },
+      usage: {
+        prompt_tokens: 10,
+        completion_tokens: words.length,
+        total_tokens: 10 + words.length,
+      },
     }),
     "data: [DONE]\n\n",
   ];
@@ -122,18 +126,24 @@ export async function startFakeUpstream(options: FakeUpstreamOptions): Promise<F
     const url = new URL(req.url ?? "/", "http://upstream");
     const request = { path: url.pathname, headers: req.headers, body };
     requests.push(request);
-    if (options.headerDelayMs) await new Promise((resolve) => setTimeout(resolve, options.headerDelayMs));
+    if (options.headerDelayMs)
+      await new Promise((resolve) => setTimeout(resolve, options.headerDelayMs));
     if (res.destroyed) return;
     const openai = url.pathname === "/v1/chat/completions";
-    const key = openai ? /^Bearer (.*)$/.exec(req.headers.authorization ?? "")?.[1] : req.headers["x-api-key"];
+    const key = openai
+      ? /^Bearer (.*)$/.exec(req.headers.authorization ?? "")?.[1]
+      : req.headers["x-api-key"];
     if (key !== options.apiKey) {
       res.writeHead(401, { "content-type": "application/json" }).end('{"error":"bad key"}');
       return;
     }
     const refusal = options.refuse?.(request);
     if (refusal) {
-      const text = typeof refusal.body === "string" ? refusal.body : JSON.stringify(refusal.body ?? {});
-      res.writeHead(refusal.status, { "content-type": "application/json", ...refusal.headers }).end(text);
+      const text =
+        typeof refusal.body === "string" ? refusal.body : JSON.stringify(refusal.body ?? {});
+      res
+        .writeHead(refusal.status, { "content-type": "application/json", ...refusal.headers })
+        .end(text);
       return;
     }
     if (url.pathname === "/v1/messages/count_tokens") {
@@ -152,7 +162,9 @@ export async function startFakeUpstream(options: FakeUpstreamOptions): Promise<F
           object: "chat.completion",
           created: 0,
           model: "fake-model",
-          choices: [{ index: 0, message: { role: "assistant", content: text }, finish_reason: "stop" }],
+          choices: [
+            { index: 0, message: { role: "assistant", content: text }, finish_reason: "stop" },
+          ],
           usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
         }),
       );

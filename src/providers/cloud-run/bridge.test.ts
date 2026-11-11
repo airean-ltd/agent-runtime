@@ -128,7 +128,9 @@ describe("startBridge", { timeout: 30_000 }, () => {
     const last = spawned.at(-1)!;
     await bridge.close();
     // The shim exits on its own once its stdin ends.
-    await new Promise((resolve) => (last.exitCode !== null ? resolve(null) : last.on("close", resolve)));
+    await new Promise((resolve) =>
+      last.exitCode !== null ? resolve(null) : last.on("close", resolve),
+    );
     expect(last.signalCode).toBeNull();
     await expect(call(port, "/ping")).rejects.toThrow();
   });
@@ -147,7 +149,8 @@ describe("startBridge", { timeout: 30_000 }, () => {
 
 /** A shim scripted from the test: what it "sends" is written to its stdout here. */
 function scriptedShim() {
-  const shims: { stdout: PassThrough; stdin: PassThrough; killed: boolean; exit: () => void }[] = [];
+  const shims: { stdout: PassThrough; stdin: PassThrough; killed: boolean; exit: () => void }[] =
+    [];
   const openShim = (): BridgeProcess => {
     const stdin = new PassThrough();
     const stdout = new PassThrough();

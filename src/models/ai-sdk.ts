@@ -70,8 +70,13 @@ export function aiSdkProviderSettings(
   options: AiSdkModelOptions,
 ): AiSdkProviderSettings {
   if (!options.apiKey) throw new TypeError("The AI SDK provider needs the provider key");
-  const name = options.name ?? endpoint.provider ?? (formatOf(endpoint) === "openai" ? "openai-compatible" : undefined);
-  const fetch = options.transformBody ? bodyRewritingFetch(options.transformBody, options.fetch) : options.fetch;
+  const name =
+    options.name ??
+    endpoint.provider ??
+    (formatOf(endpoint) === "openai" ? "openai-compatible" : undefined);
+  const fetch = options.transformBody
+    ? bodyRewritingFetch(options.transformBody, options.fetch)
+    : options.fetch;
   return {
     baseURL: sdkBaseUrl(endpoint),
     apiKey: options.apiKey,
@@ -101,7 +106,10 @@ export function createAiSdkModel<Model>(
   const settings = aiSdkProviderSettings(endpoint, options);
   if (endpoint.format === "openai") {
     if (!factories.openai) throw new Error("No AI SDK factory for an openai endpoint");
-    return factories.openai({ ...settings, name: settings.name ?? "openai-compatible" }, endpoint.model);
+    return factories.openai(
+      { ...settings, name: settings.name ?? "openai-compatible" },
+      endpoint.model,
+    );
   }
   if (!factories.anthropic) throw new Error("No AI SDK factory for an anthropic endpoint");
   return factories.anthropic(settings, endpoint.model);

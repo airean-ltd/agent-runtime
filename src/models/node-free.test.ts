@@ -23,7 +23,9 @@ describe("the models module", () => {
         (m) => m[1],
       );
       for (const specifier of specifiers) {
-        expect(specifier, `${file} imports ${specifier}`).toMatch(/^(\.\/|\.\.\/contract\/)[^/]+\.ts$/);
+        expect(specifier, `${file} imports ${specifier}`).toMatch(
+          /^(\.\/|\.\.\/contract\/)[^/]+\.ts$/,
+        );
       }
     }
   });

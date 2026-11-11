@@ -37,7 +37,12 @@ async function startScriptedModel(replies: Reply[]) {
         res.write(chunk({ role: "assistant", content: reply.text }));
         res.write(chunk({}, "stop"));
       } else {
-        const call = { index: 0, id: `call_${n}`, type: "function", function: { name: reply.call.name, arguments: JSON.stringify(reply.call.args) } };
+        const call = {
+          index: 0,
+          id: `call_${n}`,
+          type: "function",
+          function: { name: reply.call.name, arguments: JSON.stringify(reply.call.args) },
+        };
         res.write(chunk({ role: "assistant", tool_calls: [call] }));
         res.write(chunk({}, "tool_calls"));
       }
@@ -59,13 +64,21 @@ async function runRunner(
   stop?: { file: string; signal: NodeJS.Signals },
 ): Promise<{ code: number | null; events: RunEvent[] }> {
   const child = spawn(process.execPath, [fixture], {
-    env: { PATH: process.env.PATH ?? "", HOME: workspace, PI_OFFLINE: "1", WORKSPACE: workspace, ...env },
+    env: {
+      PATH: process.env.PATH ?? "",
+      HOME: workspace,
+      PI_OFFLINE: "1",
+      WORKSPACE: workspace,
+      ...env,
+    },
     stdio: ["ignore", "pipe", "inherit"],
   });
   let out = "";
   child.stdout.setEncoding("utf8").on("data", (d: string) => (out += d));
   // A file the tool writes, since an event comes before the call's intent is stored.
-  const poll = stop && setInterval(() => existsSync(path.join(workspace, stop.file)) && child.kill(stop.signal), 20);
+  const poll =
+    stop &&
+    setInterval(() => existsSync(path.join(workspace, stop.file)) && child.kill(stop.signal), 20);
   const code = await new Promise<number | null>((resolve) => child.on("exit", resolve));
   clearInterval(poll);
   const events = out
@@ -90,9 +103,19 @@ describe("runDurableAgent", { timeout: 60_000 }, () => {
 
   async function openaiThroughGateway(replies: Reply[]) {
     model = await startScriptedModel(replies);
-    gateway = createInProcessGateway({ format: "openai", baseUrl: model.baseUrl, apiKey: "sk-provider", log: () => {} });
+    gateway = createInProcessGateway({
+      format: "openai",
+      baseUrl: model.baseUrl,
+      apiKey: "sk-provider",
+      log: () => {},
+    });
     const url = await gateway.listen();
-    return { LLM_API: "openai", LLM_MODEL: "m", LLM_BASE_URL: url, LLM_API_KEY: await gateway.grant("run_1", 60_000) };
+    return {
+      LLM_API: "openai",
+      LLM_MODEL: "m",
+      LLM_BASE_URL: url,
+      LLM_API_KEY: await gateway.grant("run_1", 60_000),
+    };
   }
 
   it("runs tools and writes the pi runner's events", async () => {
@@ -100,19 +123,37 @@ describe("runDurableAgent", { timeout: 60_000 }, () => {
     await mkdir(path.join(workspace, "outputs"));
     await writeFile(path.join(workspace, "outputs/chart.png"), "png");
     const env = await openaiThroughGateway([
-      { call: { name: "save_output", args: { path: "chart.png", kind: "chart", caption: "A chart" } } },
-      { call: { name: "save_output", args: { path: "chart.png", kind: "nope", caption: "Bad kind" } } },
+      {
+        call: {
+          name: "save_output",
+          args: { path: "chart.png", kind: "chart", caption: "A chart" },
+        },
+      },
+      {
+        call: {
+          name: "save_output",
+          args: { path: "chart.png", kind: "nope", caption: "Bad kind" },
+        },
+      },
       { text: "Saved the chart." },
     ]);
 
-    const { code, events } = await runRunner(workspace, { ...env, RUN_ID: "run_1", PROMPT: "Chart it." });
+    const { code, events } = await runRunner(workspace, {
+      ...env,
+      RUN_ID: "run_1",
+      PROMPT: "Chart it.",
+    });
 
     expect(code).toBe(0);
     const types = events.map((e) => e.type);
     expect(types[0]).toBe("run_started");
     expect(types.at(-1)).toBe("run_finished");
     expect(events.at(-1)!.payload).toMatchObject({ status: "succeeded" });
-    expect(events.find((e) => e.type === "artifact")!.payload).toMatchObject({ kind: "chart", caption: "A chart", size: 3 });
+    expect(events.find((e) => e.type === "artifact")!.payload).toMatchObject({
+      kind: "chart",
+      caption: "A chart",
+      size: 3,
+    });
     const ends = events.filter((e) => e.type === "tool_end").map((e) => e.payload);
     expect(ends).toMatchObject([
       { toolCallId: "call_0", toolName: "save_output", isError: false },
@@ -121,52 +162,71 @@ describe("runDurableAgent", { timeout: 60_000 }, () => {
     expect(String(ends[1]!.result)).toContain("kind");
     expect(events.filter((e) => e.type === "tool_start")).toHaveLength(2);
     expect(events.filter((e) => e.type === "turn_end")).toHaveLength(3);
-    const text = events.flatMap((e) => (e.type === "text_delta" ? [String(e.payload.delta)] : [])).join("");
+    const text = events
+      .flatMap((e) => (e.type === "text_delta" ? [String(e.payload.delta)] : []))
+      .join("");
     expect(text).toBe("Saved the chart.");
   });
 
   it.each([
     ["stopped", "SIGTERM", 143],
     ["killed", "SIGKILL", null],
-  ] as const)("carries a %s run on in its next attempt without asking again, and takes a new run as the next message", async (_, signal, exitCode) => {
-    const workspace = await mkdtemp(path.join(tmpdir(), "durable-ws-"));
-    const env = await openaiThroughGateway([
-      { call: { name: "bash", args: { command: "touch started && sleep 30" } } },
-      { text: "Gave up on sleeping." },
-      { text: "Second answer." },
-    ]);
+  ] as const)(
+    "carries a %s run on in its next attempt without asking again, and takes a new run as the next message",
+    async (_, signal, exitCode) => {
+      const workspace = await mkdtemp(path.join(tmpdir(), "durable-ws-"));
+      const env = await openaiThroughGateway([
+        { call: { name: "bash", args: { command: "touch started && sleep 30" } } },
+        { text: "Gave up on sleeping." },
+        { text: "Second answer." },
+      ]);
 
-    // The first attempt ends while its tool runs: stopped, as a sandbox is, or killed.
-    const first = await runRunner(workspace, { ...env, RUN_ID: "run_1", PROMPT: "Sleep." }, { file: "started", signal });
-    expect(first.code).toBe(exitCode);
-    expect(first.events.some((e) => e.type === "run_finished")).toBe(false);
-    expect(model!.requests).toHaveLength(1);
+      // The first attempt ends while its tool runs: stopped, as a sandbox is, or killed.
+      const first = await runRunner(
+        workspace,
+        { ...env, RUN_ID: "run_1", PROMPT: "Sleep." },
+        { file: "started", signal },
+      );
+      expect(first.code).toBe(exitCode);
+      expect(first.events.some((e) => e.type === "run_finished")).toBe(false);
+      expect(model!.requests).toHaveLength(1);
 
-    // The next attempt of the same run reports only what is new.
-    const second = await runRunner(workspace, { ...env, RUN_ID: "run_1", PROMPT: "Sleep." });
-    expect(second.code).toBe(0);
-    expect(second.events.at(-1)!.payload).toMatchObject({ status: "succeeded" });
-    expect(second.events.some((e) => e.type === "tool_start")).toBe(false);
-    expect(second.events.find((e) => e.type === "tool_end")!.payload).toMatchObject({ toolCallId: "call_0", isError: true });
-    expect(model!.requests).toHaveLength(2);
-    const resumed = model!.requests[1]!;
-    // The prompt went in once, and the interrupted call came back to the model.
-    expect(userMessages(resumed)).toHaveLength(1);
-    expect(resumed.at(-1)).toMatchObject({ role: "tool", tool_call_id: "call_0" });
+      // The next attempt of the same run reports only what is new.
+      const second = await runRunner(workspace, { ...env, RUN_ID: "run_1", PROMPT: "Sleep." });
+      expect(second.code).toBe(0);
+      expect(second.events.at(-1)!.payload).toMatchObject({ status: "succeeded" });
+      expect(second.events.some((e) => e.type === "tool_start")).toBe(false);
+      expect(second.events.find((e) => e.type === "tool_end")!.payload).toMatchObject({
+        toolCallId: "call_0",
+        isError: true,
+      });
+      expect(model!.requests).toHaveLength(2);
+      const resumed = model!.requests[1]!;
+      // The prompt went in once, and the interrupted call came back to the model.
+      expect(userMessages(resumed)).toHaveLength(1);
+      expect(resumed.at(-1)).toMatchObject({ role: "tool", tool_call_id: "call_0" });
 
-    // Another run on the same session is the thread's next message.
-    const third = await runRunner(workspace, { ...env, RUN_ID: "run_2", PROMPT: "Again." });
-    expect(third.code).toBe(0);
-    expect(model!.requests).toHaveLength(3);
-    expect(userMessages(model!.requests[2]!)).toHaveLength(2);
-    const text = third.events.flatMap((e) => (e.type === "text_delta" ? [String(e.payload.delta)] : [])).join("");
-    expect(text).toBe("Second answer.");
-  });
+      // Another run on the same session is the thread's next message.
+      const third = await runRunner(workspace, { ...env, RUN_ID: "run_2", PROMPT: "Again." });
+      expect(third.code).toBe(0);
+      expect(model!.requests).toHaveLength(3);
+      expect(userMessages(model!.requests[2]!)).toHaveLength(2);
+      const text = third.events
+        .flatMap((e) => (e.type === "text_delta" ? [String(e.payload.delta)] : []))
+        .join("");
+      expect(text).toBe("Second answer.");
+    },
+  );
 
   it("points a catalog model at the gateway", async () => {
     // kimi-coding/kimi-for-coding speaks Chat Completions.
     upstream = await startFakeUpstream({ apiKey: "sk-provider" });
-    gateway = createInProcessGateway({ format: "openai", baseUrl: upstream.baseUrl, apiKey: "sk-provider", log: () => {} });
+    gateway = createInProcessGateway({
+      format: "openai",
+      baseUrl: upstream.baseUrl,
+      apiKey: "sk-provider",
+      log: () => {},
+    });
     const url = await gateway.listen();
     const workspace = await mkdtemp(path.join(tmpdir(), "durable-ws-"));
 
@@ -178,15 +238,29 @@ describe("runDurableAgent", { timeout: 60_000 }, () => {
     });
 
     expect(code).toBe(0);
-    expect(events[0]!.payload).toMatchObject({ runtime: "pi-durable", model: "kimi-coding/kimi-for-coding" });
+    expect(events[0]!.payload).toMatchObject({
+      runtime: "pi-durable",
+      model: "kimi-coding/kimi-for-coding",
+    });
     expect(events.at(-1)!.payload).toMatchObject({ status: "succeeded" });
-    expect(upstream.requests[0]).toMatchObject({ path: "/v1/chat/completions", headers: { authorization: "Bearer sk-provider" } });
+    expect(upstream.requests[0]).toMatchObject({
+      path: "/v1/chat/completions",
+      headers: { authorization: "Bearer sk-provider" },
+    });
   });
 
   it("refuses a run without a RUN_ID", async () => {
     const workspace = await mkdtemp(path.join(tmpdir(), "durable-ws-"));
-    const { code, events } = await runRunner(workspace, { LLM_API: "openai", LLM_MODEL: "m", LLM_BASE_URL: "http://g", PROMPT: "Hi." });
+    const { code, events } = await runRunner(workspace, {
+      LLM_API: "openai",
+      LLM_MODEL: "m",
+      LLM_BASE_URL: "http://g",
+      PROMPT: "Hi.",
+    });
     expect(code).toBe(1);
-    expect(events.at(-1)!.payload).toMatchObject({ status: "failed", error: expect.stringContaining("RUN_ID") });
+    expect(events.at(-1)!.payload).toMatchObject({
+      status: "failed",
+      error: expect.stringContaining("RUN_ID"),
+    });
   });
 });

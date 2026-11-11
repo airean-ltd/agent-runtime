@@ -122,7 +122,11 @@ function str(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-function requestBody(endpoint: ModelEndpoint, request: ModelCallRequest, options: ModelCallOptions) {
+function requestBody(
+  endpoint: ModelEndpoint,
+  request: ModelCallRequest,
+  options: ModelCallOptions,
+) {
   const stream = request.stream === true;
   if (endpoint.format === "openai") {
     return {
@@ -133,7 +137,9 @@ function requestBody(endpoint: ModelEndpoint, request: ModelCallRequest, options
         ...request.messages.map(({ role, content }) => ({ role, content })),
       ],
       [options.maxTokensField ?? "max_tokens"]: request.maxOutputTokens,
-      ...(request.reasoningEffort !== undefined ? { reasoning_effort: request.reasoningEffort } : {}),
+      ...(request.reasoningEffort !== undefined
+        ? { reasoning_effort: request.reasoningEffort }
+        : {}),
       ...(request.structuredOutput
         ? { response_format: { type: "json_schema", json_schema: request.structuredOutput } }
         : {}),
@@ -174,7 +180,9 @@ type Answer = {
 
 function midStreamError(root: Record<string, unknown>): ModelCallError {
   const provider = providerErrorInfo(root);
-  return new ModelCallError(codeFromProvider(provider) ?? "provider_response_invalid", { provider });
+  return new ModelCallError(codeFromProvider(provider) ?? "provider_response_invalid", {
+    provider,
+  });
 }
 
 function openAiJson(value: unknown, answer: Answer): void {
@@ -291,7 +299,8 @@ export async function callModel(
 ): Promise<ModelCallResult> {
   if (!options.apiKey) throw new TypeError("callModel needs the provider key");
   const openai = formatOf(endpoint) === "openai";
-  if (request.structuredOutput && !openai) throw new ModelCallError("structured_output_unsupported");
+  if (request.structuredOutput && !openai)
+    throw new ModelCallError("structured_output_unsupported");
   const now = options.now ?? Date.now;
   const timeouts = options.timeouts ?? {};
   const startedAt = now();

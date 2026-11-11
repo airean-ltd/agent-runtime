@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { createFrameDecoder, DATA, encodeData, encodeFrame, END, MAX_FRAME_PAYLOAD, OPEN } from "./frames.ts";
+import {
+  createFrameDecoder,
+  DATA,
+  encodeData,
+  encodeFrame,
+  END,
+  MAX_FRAME_PAYLOAD,
+  OPEN,
+} from "./frames.ts";
 import { ExitMarkerReader, newExitMarker, splitExitMarker } from "./exit-marker.ts";
 
 function read(chunks: string[], marker: string) {
@@ -71,7 +79,9 @@ describe("tunnel frames", () => {
     ]);
     for (const size of [1, 5, 9, 4096, frames.length]) {
       const seen: [number, number, number][] = [];
-      const decode = createFrameDecoder((type, id, payload) => seen.push([type, id, payload.length]));
+      const decode = createFrameDecoder((type, id, payload) =>
+        seen.push([type, id, payload.length]),
+      );
       for (let i = 0; i < frames.length; i += size) decode(frames.subarray(i, i + size));
       expect(seen).toEqual([
         [OPEN, 1, 0],
@@ -85,7 +95,10 @@ describe("tunnel frames", () => {
   it("refuses a frame over the limit as soon as its header arrives, and splits large data to fit", () => {
     const errors: string[] = [];
     const seen: number[] = [];
-    const decode = createFrameDecoder((type) => seen.push(type), (e) => errors.push(e.message));
+    const decode = createFrameDecoder(
+      (type) => seen.push(type),
+      (e) => errors.push(e.message),
+    );
     const head = Buffer.alloc(9);
     head.writeUInt8(DATA, 0);
     head.writeUInt32BE(1, 1);

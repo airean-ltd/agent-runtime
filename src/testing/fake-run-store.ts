@@ -46,9 +46,9 @@ export class FakeClaim<Payload, Ending = RunEnding>
   };
 }
 
-export class FakeRunStore<Payload = unknown, Ending = RunEnding>
-  implements RunStore<FakeClaim<Payload, Ending>>
-{
+export class FakeRunStore<Payload = unknown, Ending = RunEnding> implements RunStore<
+  FakeClaim<Payload, Ending>
+> {
   /** Runs not yet claimed, by id. */
   readonly waiting: Map<string, Payload>;
   /** Every claim that landed, by run id. Set a claim's `state` to cancel or lose it. */

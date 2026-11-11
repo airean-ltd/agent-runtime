@@ -51,7 +51,8 @@ const FORMAT_ALIASES: Record<string, ModelFormat> = {
  */
 export function parseModelFormat(value: string): ModelFormat {
   const format = FORMAT_ALIASES[value.trim().toLowerCase()];
-  if (!format) throw new Error(`Model format must be openai or anthropic, not ${JSON.stringify(value)}`);
+  if (!format)
+    throw new Error(`Model format must be openai or anthropic, not ${JSON.stringify(value)}`);
   return format;
 }
 
@@ -99,7 +100,9 @@ export function modelEndpoint(input: ModelEndpointInput): ModelEndpoint {
     ...(input.provider ? { provider: input.provider } : {}),
   };
   if (format === "openai") {
-    const baseUrl = url.endsWith("/chat/completions") ? url.slice(0, -"/chat/completions".length) : url;
+    const baseUrl = url.endsWith("/chat/completions")
+      ? url.slice(0, -"/chat/completions".length)
+      : url;
     return { format, baseUrl, ...extra };
   }
   const messagesUrl = url.endsWith("/messages")

@@ -269,7 +269,9 @@ async function restoreSession(
   if (session.stream) {
     const archive = await session.store.archive!(session.key, { gzip: session.gzip ?? true });
     if (!archive) return false;
-    await provider.unpackDir!(sandboxId, archive, session.remoteDir ?? SESSION_DIR, { gzip: session.gzip ?? true });
+    await provider.unpackDir!(sandboxId, archive, session.remoteDir ?? SESSION_DIR, {
+      gzip: session.gzip ?? true,
+    });
     return true;
   }
   const local = await mkdtemp(path.join(tmpdir(), "agent-runtime-session-"));
@@ -298,8 +300,15 @@ function excludedParts(exclude: readonly string[]): string[][] {
   return exclude.map((entry) => {
     const parts = entry.split("/").filter((part) => part !== "" && part !== ".");
     // No wildcards either: with `stream` the entry becomes a tar pattern.
-    if (entry.startsWith("/") || parts.length === 0 || parts.includes("..") || /[*?[\\]/.test(entry)) {
-      throw new Error(`session.exclude must name paths inside the session directory, not ${JSON.stringify(entry)}`);
+    if (
+      entry.startsWith("/") ||
+      parts.length === 0 ||
+      parts.includes("..") ||
+      /[*?[\\]/.test(entry)
+    ) {
+      throw new Error(
+        `session.exclude must name paths inside the session directory, not ${JSON.stringify(entry)}`,
+      );
     }
     return parts;
   });
@@ -386,7 +395,9 @@ export async function executeRun(opts: ExecuteRunOptions): Promise<RunOutcome> {
   if (opts.session?.stream) {
     const { store } = opts.session;
     if (!provider.packDir || !provider.unpackDir || !store.saveArchive || !store.archive) {
-      throw new Error("session.stream needs a provider with packDir and unpackDir and a store with saveArchive and archive");
+      throw new Error(
+        "session.stream needs a provider with packDir and unpackDir and a store with saveArchive and archive",
+      );
     }
   }
 
@@ -608,7 +619,11 @@ async function openSandbox(
     // start over and then save the shorter session over the thread's.
     if (opts.session) {
       restored = await restoreSession(provider, sandboxId, opts.session);
-      sink.log(restored ? `restored session ${opts.session.key}` : `no session yet for ${opts.session.key}`);
+      sink.log(
+        restored
+          ? `restored session ${opts.session.key}`
+          : `no session yet for ${opts.session.key}`,
+      );
     }
   } catch (cause) {
     await provider.destroy(sandboxId).catch(() => {});

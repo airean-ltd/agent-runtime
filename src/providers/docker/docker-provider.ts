@@ -103,10 +103,7 @@ export class DockerSandboxProvider implements SandboxProvider {
     const labelArgs = Object.entries({
       [`${this.opts.namespace}.sandbox`]: "1",
       ...labels,
-    }).flatMap(([k, v]) => [
-      "--label",
-      `${k}=${v}`,
-    ]);
+    }).flatMap(([k, v]) => ["--label", `${k}=${v}`]);
     // Isolated gateway mode gives the bridge no address in the VM, so the sandbox
     // cannot reach the VM itself (sshd, published ports of other containers).
     await docker([
@@ -171,11 +168,20 @@ export class DockerSandboxProvider implements SandboxProvider {
   }
 
   /** tar in the sandbox as its user, its stdout streamed to `archive` up to `maxBytes`. */
-  packDir(sandboxId: string, remoteDir: string, archive: string, opts: PackOptions): Promise<boolean> {
+  packDir(
+    sandboxId: string,
+    remoteDir: string,
+    archive: string,
+    opts: PackOptions,
+  ): Promise<boolean> {
     return new Promise((resolve, reject) => {
-      const child = spawn("docker", ["exec", sandboxId, "sh", "-c", PACK_SCRIPT, "sh", remoteDir, ...packArgs(opts)], {
-        stdio: ["ignore", "pipe", "pipe"],
-      });
+      const child = spawn(
+        "docker",
+        ["exec", sandboxId, "sh", "-c", PACK_SCRIPT, "sh", remoteDir, ...packArgs(opts)],
+        {
+          stdio: ["ignore", "pipe", "pipe"],
+        },
+      );
       const out = createWriteStream(archive, { flags: "wx" });
       let size = 0;
       let overflow = false;
@@ -188,7 +194,9 @@ export class DockerSandboxProvider implements SandboxProvider {
         }
       });
       child.stdout.pipe(out);
-      child.stderr.setEncoding("utf8").on("data", (d: string) => (stderr = `${stderr}${d}`.slice(-4_000)));
+      child.stderr
+        .setEncoding("utf8")
+        .on("data", (d: string) => (stderr = `${stderr}${d}`.slice(-4_000)));
       child.on("error", (error) => {
         out.destroy();
         reject(error);
@@ -209,7 +217,12 @@ export class DockerSandboxProvider implements SandboxProvider {
   }
 
   /** `archive` into tar in the sandbox, run as its user, so the files are the runner's. */
-  unpackDir(sandboxId: string, archive: string, remoteDir: string, opts: { gzip?: boolean }): Promise<void> {
+  unpackDir(
+    sandboxId: string,
+    archive: string,
+    remoteDir: string,
+    opts: { gzip?: boolean },
+  ): Promise<void> {
     return new Promise((resolve, reject) => {
       const child = spawn(
         "docker",
@@ -217,7 +230,9 @@ export class DockerSandboxProvider implements SandboxProvider {
         { stdio: ["pipe", "ignore", "pipe"] },
       );
       let stderr = "";
-      child.stderr.setEncoding("utf8").on("data", (d: string) => (stderr = `${stderr}${d}`.slice(-4_000)));
+      child.stderr
+        .setEncoding("utf8")
+        .on("data", (d: string) => (stderr = `${stderr}${d}`.slice(-4_000)));
       child.stdin.on("error", () => {});
       const input = createReadStream(archive);
       input.on("error", (error) => {
@@ -227,7 +242,9 @@ export class DockerSandboxProvider implements SandboxProvider {
       input.pipe(child.stdin);
       child.on("error", reject);
       child.on("close", (code) =>
-        code === 0 ? resolve() : reject(new Error(`Unpacking into ${remoteDir} exited ${code}: ${stderr.trim()}`)),
+        code === 0
+          ? resolve()
+          : reject(new Error(`Unpacking into ${remoteDir} exited ${code}: ${stderr.trim()}`)),
       );
     });
   }

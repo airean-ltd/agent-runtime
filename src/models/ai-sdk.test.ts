@@ -36,7 +36,12 @@ const prompt = [
 describe("createAiSdkModel", () => {
   it("builds an OpenAI-compatible model that calls the endpoint with the key", async () => {
     upstream = await startFakeUpstream({ apiKey: KEY });
-    const endpoint = modelEndpoint({ format: "openai", url: upstream.baseUrl, model: "gpt-6-luna", provider: "hkjc-chat" });
+    const endpoint = modelEndpoint({
+      format: "openai",
+      url: upstream.baseUrl,
+      model: "gpt-6-luna",
+      provider: "hkjc-chat",
+    });
     const model = createAiSdkModel(endpoint, factories, { apiKey: KEY });
     expect(model.provider).toBe("hkjc-chat.chat");
     expect(model.modelId).toBe("gpt-6-luna");
@@ -50,7 +55,11 @@ describe("createAiSdkModel", () => {
 
   it("builds an Anthropic model from the Messages endpoint, whichever form it was given in", async () => {
     upstream = await startFakeUpstream({ apiKey: KEY });
-    const endpoint = modelEndpoint({ format: "messages", url: upstream.messagesUrl, model: "kimi-for-coding" });
+    const endpoint = modelEndpoint({
+      format: "messages",
+      url: upstream.messagesUrl,
+      model: "kimi-for-coding",
+    });
     const model = createAiSdkModel(endpoint, factories, { apiKey: KEY });
     expect(model.provider).toBe("anthropic.messages");
     const result = await model.doGenerate({ prompt, maxOutputTokens: 64 });
@@ -62,8 +71,17 @@ describe("createAiSdkModel", () => {
 
   it("builds hk-legal's createOpenAI().chat model the same way", async () => {
     upstream = await startFakeUpstream({ apiKey: KEY });
-    const endpoint = modelEndpoint({ format: "openai", url: `${upstream.baseUrl}/chat/completions`, model: "gpt-6.1-sol", provider: "kimi" });
-    const model = createAiSdkModel(endpoint, { openai: (settings, id) => createOpenAI(settings).chat(id) }, { apiKey: KEY });
+    const endpoint = modelEndpoint({
+      format: "openai",
+      url: `${upstream.baseUrl}/chat/completions`,
+      model: "gpt-6.1-sol",
+      provider: "kimi",
+    });
+    const model = createAiSdkModel(
+      endpoint,
+      { openai: (settings, id) => createOpenAI(settings).chat(id) },
+      { apiKey: KEY },
+    );
     expect(model.provider).toBe("kimi.chat");
     const result = await model.doGenerate({ prompt, maxOutputTokens: 64 });
     expect(result.content).toEqual([{ type: "text", text: "Hello from the fake model." }]);
@@ -73,7 +91,11 @@ describe("createAiSdkModel", () => {
 
   it("rewrites the body the SDK sends, as hk-legal's kimiFetch does", async () => {
     upstream = await startFakeUpstream({ apiKey: KEY });
-    const endpoint = modelEndpoint({ format: "openai", url: upstream.baseUrl, model: "gpt-6-luna" });
+    const endpoint = modelEndpoint({
+      format: "openai",
+      url: upstream.baseUrl,
+      model: "gpt-6-luna",
+    });
     const model = createAiSdkModel(endpoint, factories, {
       apiKey: KEY,
       transformBody: (body) => ({ ...body, thinking: { type: "disabled" } }),
@@ -84,22 +106,37 @@ describe("createAiSdkModel", () => {
 
   it("throws for a format the app gave no factory for", () => {
     const endpoint = modelEndpoint({ format: "anthropic", url: "https://x/v1", model: "m" });
-    expect(() => createAiSdkModel(endpoint, { openai: factories.openai }, { apiKey: KEY })).toThrow(/anthropic/);
+    expect(() => createAiSdkModel(endpoint, { openai: factories.openai }, { apiKey: KEY })).toThrow(
+      /anthropic/,
+    );
   });
 });
 
 describe("aiSdkProviderSettings", () => {
   it("names an OpenAI provider by default and an Anthropic one only after its endpoint", () => {
-    const openai = modelEndpoint({ format: "openai", url: "https://x/v1/chat/completions", model: "m" });
-    const anthropic = modelEndpoint({ format: "anthropic", url: "https://y/v1/messages", model: "m" });
+    const openai = modelEndpoint({
+      format: "openai",
+      url: "https://x/v1/chat/completions",
+      model: "m",
+    });
+    const anthropic = modelEndpoint({
+      format: "anthropic",
+      url: "https://y/v1/messages",
+      model: "m",
+    });
     expect(aiSdkProviderSettings(openai, { apiKey: KEY })).toEqual({
       baseURL: "https://x/v1",
       apiKey: KEY,
       name: "openai-compatible",
     });
-    expect(aiSdkProviderSettings(anthropic, { apiKey: KEY })).toEqual({ baseURL: "https://y/v1", apiKey: KEY });
+    expect(aiSdkProviderSettings(anthropic, { apiKey: KEY })).toEqual({
+      baseURL: "https://y/v1",
+      apiKey: KEY,
+    });
     // An endpoint's provider names either format's provider.
-    expect(aiSdkProviderSettings({ ...anthropic, provider: "kimi" }, { apiKey: KEY }).name).toBe("kimi");
+    expect(aiSdkProviderSettings({ ...anthropic, provider: "kimi" }, { apiKey: KEY }).name).toBe(
+      "kimi",
+    );
     expect(() => aiSdkProviderSettings(openai, { apiKey: "" })).toThrow(/key/);
   });
 });
@@ -114,8 +151,12 @@ describe("bodyRewritingFetch", () => {
     const rewriting = bodyRewritingFetch(() => {
       throw new Error("cannot");
     }, base);
-    await expect(rewriting("https://x", { method: "POST", body: '{"a":1}' })).rejects.toThrow("network down");
-    await expect(rewriting("https://x", { method: "POST", body: "not json" })).rejects.toThrow("network down");
+    await expect(rewriting("https://x", { method: "POST", body: '{"a":1}' })).rejects.toThrow(
+      "network down",
+    );
+    await expect(rewriting("https://x", { method: "POST", body: "not json" })).rejects.toThrow(
+      "network down",
+    );
     expect(sent).toEqual(['{"a":1}', "not json"]);
   });
 });

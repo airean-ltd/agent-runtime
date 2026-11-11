@@ -106,7 +106,8 @@ function attach(
       if (dead) return;
       if (type === OPEN) {
         if (id <= lastId) return stop(`the shim reused stream ${id}`);
-        if (streams.size >= maxStreams) return stop(`the shim opened more than ${maxStreams} streams`);
+        if (streams.size >= maxStreams)
+          return stop(`the shim opened more than ${maxStreams} streams`);
         lastId = id;
         let ended = false;
         const stream = new Duplex({

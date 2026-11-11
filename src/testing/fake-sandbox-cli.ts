@@ -105,9 +105,15 @@ function translate(arg: string, config: Config): string {
   const escape = (p: string) => p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   // One pass, longest path first, so a rewritten path is never rewritten again
   // (on Linux the sources are under /tmp themselves).
-  const alternatives = [...maps.keys()].sort((a, b) => b.length - a.length).map(escape).join("|");
+  const alternatives = [...maps.keys()]
+    .sort((a, b) => b.length - a.length)
+    .map(escape)
+    .join("|");
   const pattern = new RegExp(`(^|[\\s'"=:(])(${alternatives})(?=/|$|[\\s'";)])`, "g");
-  const out = arg.replace(pattern, (_, before: string, from: string) => `${before}${maps.get(from)}`);
+  const out = arg.replace(
+    pattern,
+    (_, before: string, from: string) => `${before}${maps.get(from)}`,
+  );
   // Limits are not applied here: a sandbox's would land on this host's user.
   return out.replace(/(^|[\s;&|(])ulimit /g, "$1: ulimit ");
 }
@@ -117,7 +123,15 @@ const [verb, id, ...rest] = argv;
 if (verb === "run") {
   if (!id) fail("a sandbox id is required");
   if (configOf(id)) fail(`sandbox ${id} already exists`);
-  const { flags, values } = parse(rest, ["--mount", "-e", "--env", "-p", "--publish", "-w", "--workdir"]);
+  const { flags, values } = parse(rest, [
+    "--mount",
+    "-e",
+    "--env",
+    "-p",
+    "--publish",
+    "-w",
+    "--workdir",
+  ]);
   const binds = (values["--mount"] ?? []).map(bindOf);
   for (const bind of binds) {
     if (!existsSync(bind.source)) fail(`mount source ${bind.source} does not exist`);

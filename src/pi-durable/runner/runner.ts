@@ -31,7 +31,12 @@ import {
 } from "@earendil-works/pi-durable";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
-import { createBashTool, createEditTool, createReadTool, createWriteTool } from "@earendil-works/pi-durable/tools";
+import {
+  createBashTool,
+  createEditTool,
+  createReadTool,
+  createWriteTool,
+} from "@earendil-works/pi-durable/tools";
 
 import type { EmitRunEvent } from "../../contract/events.ts";
 import { dataPromptSection } from "../../data/commands.ts";
@@ -130,7 +135,8 @@ async function run(options: DurableRunnerOptions, emit: EmitRunEvent): Promise<v
 
   const prompt = env.PROMPT;
   if (!prompt) throw new Error("PROMPT is required");
-  if (!env.RUN_ID) throw new Error("RUN_ID is required: it keeps a later attempt from asking twice");
+  if (!env.RUN_ID)
+    throw new Error("RUN_ID is required: it keeps a later attempt from asking twice");
   if (!catalogModel) throw new Error(`Model ${providerId}/${modelId} not in pi's catalog`);
   if (env.LLM_API_KEY) await modelRuntime.setRuntimeApiKey(providerId, env.LLM_API_KEY);
   // A custom model already carries its base URL; a catalog one is pointed at
@@ -141,7 +147,9 @@ async function run(options: DurableRunnerOptions, emit: EmitRunEvent): Promise<v
 
   const data = await loadDataCommands(env, options.fetch);
   // The bash tool runs commands with this environment, so the CLI finds these there.
-  const shellEnv = data ? { ...process.env, AGENT_DATA_URL: data.url, AGENT_DATA_TOKEN: data.token } : process.env;
+  const shellEnv = data
+    ? { ...process.env, AGENT_DATA_URL: data.url, AGENT_DATA_TOKEN: data.token }
+    : process.env;
   const systemPrompt = [options.systemPrompt(ctx), data ? dataPromptSection(data.list) : ""]
     .filter(Boolean)
     .join("\n\n");
@@ -186,12 +194,17 @@ async function run(options: DurableRunnerOptions, emit: EmitRunEvent): Promise<v
   process.once("SIGTERM", onTerm);
 
   try {
-    const agent = { model: { provider: providerId, modelId }, thinkingLevel, cwd: workspace } as const;
+    const agent = {
+      model: { provider: providerId, modelId },
+      thinkingLevel,
+      cwd: workspace,
+    } as const;
     const root = await harness.root(context, { agent });
     await root.configure(agent, context); // a thread's next run may use another model
 
     const events = new ConversationEvents(emit);
-    const live = () => harness.snapshot(LiveDoc, root.id, context) as Promise<LiveState | undefined>;
+    const live = () =>
+      harness.snapshot(LiveDoc, root.id, context) as Promise<LiveState | undefined>;
     // What this process reports starts at what is committed now; a previous
     // attempt reported what came before.
     const newest = await root.entries({ order: "descending" }, 1, undefined, context);
@@ -206,7 +219,12 @@ async function run(options: DurableRunnerOptions, emit: EmitRunEvent): Promise<v
         const added: EntryRecord[] = [];
         let cursor;
         do {
-          const page = await root.entries({ minEntryId: last, order: "ascending" }, 200, cursor, context);
+          const page = await root.entries(
+            { minEntryId: last, order: "ascending" },
+            200,
+            cursor,
+            context,
+          );
           added.push(...page.items.filter((entry) => entry.id !== last));
           cursor = page.next;
         } while (cursor !== undefined);
@@ -230,7 +248,10 @@ async function run(options: DurableRunnerOptions, emit: EmitRunEvent): Promise<v
       limits: runLimits(env),
       dataCommands: data?.list.commands.map((command) => command.name) ?? [],
     });
-    const submission = await root.submit({ type: "input", content: prompt, requestId: env.RUN_ID }, context);
+    const submission = await root.submit(
+      { type: "input", content: prompt, requestId: env.RUN_ID },
+      context,
+    );
     harness.resume();
     const settled = await submission.wait(context);
     await watch.stop();
@@ -240,7 +261,9 @@ async function run(options: DurableRunnerOptions, emit: EmitRunEvent): Promise<v
     const error =
       settled.status === "done"
         ? undefined
-        : [settled.reason ?? failure?.reason ?? "unanswered", failure?.detail].filter(Boolean).join(": ");
+        : [settled.reason ?? failure?.reason ?? "unanswered", failure?.detail]
+            .filter(Boolean)
+            .join(": ");
     emit("run_finished", { status: error ? "failed" : "succeeded", error, sessionFile });
   } finally {
     process.off("SIGTERM", onTerm);

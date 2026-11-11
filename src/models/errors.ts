@@ -68,9 +68,11 @@ export class ModelCallError extends Error {
     this.name = "ModelCallError";
     this.code = code;
     this.retryable = RETRYABLE_MODEL_ERRORS.includes(code);
-    if (this.retryable && details.retryAfterMs !== undefined) this.retryAfterMs = details.retryAfterMs;
+    if (this.retryable && details.retryAfterMs !== undefined)
+      this.retryAfterMs = details.retryAfterMs;
     if (details.status !== undefined) this.status = details.status;
-    if (details.provider && Object.keys(details.provider).length > 0) this.provider = details.provider;
+    if (details.provider && Object.keys(details.provider).length > 0)
+      this.provider = details.provider;
   }
 }
 
@@ -126,13 +128,21 @@ const BY_PROVIDER_ID: Record<string, ModelErrorCode> = {
 
 /** A code the endpoint's own identifiers name precisely, if any. */
 export function codeFromProvider(info: ProviderErrorInfo): ModelErrorCode | undefined {
-  return (info.code && BY_PROVIDER_ID[info.code]) || (info.type && BY_PROVIDER_ID[info.type]) || undefined;
+  return (
+    (info.code && BY_PROVIDER_ID[info.code]) ||
+    (info.type && BY_PROVIDER_ID[info.type]) ||
+    undefined
+  );
 }
 
 /** The code for a refused request, from its status and what the endpoint said. */
 export function httpErrorCode(status: number, info: ProviderErrorInfo = {}): ModelErrorCode {
   const named = codeFromProvider(info);
-  if (named === "quota_exhausted" || named === "subscription_required" || named === "context_overflow") {
+  if (
+    named === "quota_exhausted" ||
+    named === "subscription_required" ||
+    named === "context_overflow"
+  ) {
     return named;
   }
   if (status === 401) return "authentication_failed";

@@ -48,8 +48,7 @@ export function createSaveOutputTool(opts: {
     name: "save_output",
     label: "Save output",
     description:
-      opts.description ??
-      `Register a file you wrote under ${outputsDir} as a result for the user.`,
+      opts.description ?? `Register a file you wrote under ${outputsDir} as a result for the user.`,
     parameters: Type.Object({
       path: Type.String({ description: `Path of the file, inside ${outputsDir}` }),
       kind: Type.Union(opts.kinds.map((k) => Type.Literal(k))),

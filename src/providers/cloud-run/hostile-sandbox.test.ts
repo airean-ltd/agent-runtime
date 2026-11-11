@@ -68,7 +68,9 @@ describe("a hostile sandbox", { timeout: 60_000 }, () => {
     // The output event lands, with nothing stored for it.
     expect(sink.uploads).toEqual([]);
     expect(outcome.events.find((e) => e.type === "artifact")?.payload.artifactId).toBeNull();
-    expect(sink.lines.some((l) => /could not store \/workspace\/outputs\/leak.txt: .*symlink/.test(l))).toBe(true);
+    expect(
+      sink.lines.some((l) => /could not store \/workspace\/outputs\/leak.txt: .*symlink/.test(l)),
+    ).toBe(true);
   });
 
   it("cannot have other threads' sessions saved as its own by symlinking its session directory", async () => {
