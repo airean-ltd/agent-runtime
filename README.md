@@ -25,7 +25,7 @@ infra/cloud-run/        scripts that set up Convex's federation and deploy a Clo
 Releases are git tags that carry their built `dist/`. The repo is public, so installing one needs no credentials:
 
 ```json
-{ "dependencies": { "@eankhbayar/agent-runtime": "github:eankhbayar/agent-runtime#v0.9.0" } }
+{ "dependencies": { "@eankhbayar/agent-runtime": "github:airean-ltd/agent-runtime#v0.14.0" } }
 ```
 
 `@earendil-works/pi-coding-agent` and `typebox` are peer dependencies, needed only where `./pi/runner` is imported. `./models` needs no AI SDK package; an app that wants an AI SDK model passes in the factories it already imports (see [Models](#models)).
