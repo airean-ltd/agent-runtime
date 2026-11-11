@@ -647,5 +647,6 @@ pi/dispatcher   -> core               executeRun, EventSink, SinkState, LIVE, To
 
 ```bash
 pnpm ready      # typecheck, test, build
-pnpm release    # tag v<version> with dist/ and push
 ```
+
+To release, bump `version` in `package.json` in the PR. When it merges, the Release workflow runs `pnpm ready`, tags `v<version>` with its built `dist/` and pushes the tag. A merge that leaves the version alone releases nothing, so two version bumps merged one after the other each get their tag. `pnpm release` does the same from a clean `main` on your machine, should the workflow be down.
