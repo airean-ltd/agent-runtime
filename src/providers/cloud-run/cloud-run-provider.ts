@@ -50,6 +50,21 @@ const MAX_CLI_OUTPUT = 16 * 1024 * 1024;
 /** Linux refuses a single argument or environment string longer than this. */
 const MAX_ARG_BYTES = 128 * 1024 - 1;
 
+/**
+ * A command's environment as shell for its wrapper to eval: one `export` per
+ * variable, each value single-quoted, so any text, newlines and quotes too,
+ * arrives as it is.
+ */
+function envScript(env: Record<string, string>): string {
+  return Object.entries(env)
+    .map(([name, value]) => {
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) throw new Error(`Bad environment name ${name}`);
+      if (value.includes("\0")) throw new Error(`The value of ${name} holds a NUL byte`);
+      return `export ${name}='${value.replaceAll("'", `'\\''`)}'\n`;
+    })
+    .join("");
+}
+
 export class SandboxCliError extends Error {
   readonly args: string[];
   readonly exitCode: number | null;
@@ -356,10 +371,14 @@ export class CloudRunSandboxProvider implements SandboxProvider {
   ): Promise<{ code: number | null; stderr: string }> {
     const marker = newExitMarker();
     const { stderr } = await this.cliToFile(
-      this.execArgs(sandboxId, // A subshell, so a script that exits still gets its marker printed.
-      ["/bin/sh", "-c", `(${script}); code=$?; ${printExitMarker(marker)}`, "sh", ...args], {
-        COPYFILE_DISABLE: "1",
-      }),
+      // A subshell, so a script that exits still gets its marker printed.
+      this.execArgs(sandboxId, [
+        "/bin/sh",
+        "-c",
+        `export COPYFILE_DISABLE=1; (${script}); code=$?; ${printExitMarker(marker)}`,
+        "sh",
+        ...args,
+      ]),
       file,
       // Room for the marker.
       maxBytes + 4096,
@@ -390,6 +409,7 @@ export class CloudRunSandboxProvider implements SandboxProvider {
     // The inner shell writes its pid and becomes the command, so a kill reaches
     // the command itself; the outer one outlives it to print the exit code.
     const script = [
+      `eval "$(cat)"`,
       ...this.limitLines(sandbox?.limits),
       `pf=$1; shift`,
       `/bin/sh -c 'echo $$ > "$0"; exec "$@"' "$pf" "$@"`,
@@ -399,15 +419,24 @@ export class CloudRunSandboxProvider implements SandboxProvider {
     ].join("\n");
 
     let child: ChildProcess;
+    // The command's environment comes over stdin, never in the arguments: the
+    // launcher writes each exec's command line to /var/log/sandbox.log, which
+    // Cloud Run sends to Cloud Logging, and a run's env holds its model token
+    // and the member's prompt. The command then reads a stdin at its end, as
+    // it did /dev/null before.
+    let environment: string;
     try {
-      child = spawn(
-        this.bin,
-        this.execArgs(sandboxId, ["/bin/sh", "-c", script, "sh", pidFile, ...command], opts.env),
-        { stdio: ["ignore", "pipe", "pipe"], env: this.cliEnvironment() },
-      );
+      environment = envScript(opts.env ?? {});
+      child = spawn(this.bin, this.execArgs(sandboxId, ["/bin/sh", "-c", script, "sh", pidFile, ...command]), {
+        stdio: ["pipe", "pipe", "pipe"],
+        env: this.cliEnvironment(),
+      });
     } catch (error) {
       return { done: Promise.reject(error), kill: async () => {} };
     }
+    // A sandbox that is gone closes stdin early; the exit code says what happened.
+    child.stdin!.on("error", () => {});
+    child.stdin!.end(environment);
     sandbox?.children.add(child);
 
     let killed = false;
@@ -539,16 +568,12 @@ export class CloudRunSandboxProvider implements SandboxProvider {
     return hostname();
   }
 
-  /** `sandbox exec` arguments with a PATH, HOME and `env` set, since a sandbox inherits none. */
-  private execArgs(sandboxId: string, command: string[], env: Record<string, string> = {}): string[] {
-    const assignments = Object.entries({
-      PATH: this.opts.path ?? DEFAULT_PATH,
-      HOME: "/root",
-      ...env,
-    }).map(([name, value]) => {
-      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) throw new Error(`Bad environment name ${name}`);
-      return `${name}=${value}`;
-    });
+  /**
+   * `sandbox exec` arguments with PATH and HOME set, since a sandbox inherits
+   * none. Nothing else goes in them: the launcher logs them (see exec).
+   */
+  private execArgs(sandboxId: string, command: string[]): string[] {
+    const assignments = [`PATH=${this.opts.path ?? DEFAULT_PATH}`, "HOME=/root"];
     const args = [
       "exec",
       sandboxId,
@@ -562,7 +587,7 @@ export class CloudRunSandboxProvider implements SandboxProvider {
     for (const arg of args) {
       if (Buffer.byteLength(arg) > MAX_ARG_BYTES) {
         throw new Error(
-          `An argument or environment value of ${Buffer.byteLength(arg)} bytes is too long for sandbox exec (${MAX_ARG_BYTES} at most): ${arg.slice(0, 40)}…`,
+          `An argument of ${Buffer.byteLength(arg)} bytes is too long for sandbox exec (${MAX_ARG_BYTES} at most): ${arg.slice(0, 40)}…`,
         );
       }
     }
