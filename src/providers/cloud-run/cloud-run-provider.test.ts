@@ -133,12 +133,39 @@ describe("CloudRunSandboxProvider", { timeout: 30_000 }, () => {
       expect(stdout).toContain("PATH=/usr/local/sbin:");
       // The working directory is the workspace.
       expect(stdout.trim().split("\n").at(-1)).toContain(path.join(id, "workspace"));
-      await expect(
-        p.exec(id, ["true"], { env: { PROMPT: "x".repeat(200_000) } }).done,
-      ).rejects.toThrow(/too long for sandbox exec/);
+      // A value of any length, too long for an argument.
+      const long = await run(p, id, ["sh", "-c", 'printf %s "$PROMPT" | wc -c'], { env: { PROMPT: "x".repeat(200_000) } });
+      expect(long.stdout.trim()).toBe("200000");
     } finally {
       delete process.env.AGENT_RUNTIME_TEST_SECRET;
     }
+  });
+
+  it("never puts the environment in sandbox exec's arguments, which the launcher logs", async () => {
+    const p = provider();
+    const id = await p.create({ image: "", limits: LIMITS });
+    const env = {
+      LLM_API_KEY: "rt_secret-run-token",
+      PROMPT: "Mei's plan: 'quote' \"double\" $HOME `date` \\ back\nsecond line\n",
+      EMPTY: "",
+    };
+    // Each value arrives exactly, unexpanded.
+    for (const [name, value] of Object.entries(env)) {
+      const { code, stdout } = await run(p, id, ["sh", "-c", `printf '%s' "$${name}"`], { env });
+      expect(code).toBe(0);
+      expect(stdout).toBe(value);
+    }
+    const args = (await cli.calls()).filter((call) => call[0] === "exec").flat().join("\n");
+    expect(args).not.toContain("rt_secret-run-token");
+    expect(args).not.toContain("Mei's plan");
+    expect(args).toContain("PATH=");
+  });
+
+  it("refuses an environment it cannot pass whole", async () => {
+    const p = provider();
+    const id = await p.create({ image: "", limits: LIMITS });
+    await expect(p.exec(id, ["true"], { env: { "BAD NAME": "x" } }).done).rejects.toThrow(/Bad environment name/);
+    await expect(p.exec(id, ["true"], { env: { NUL: "a\0b" } }).done).rejects.toThrow(/NUL byte/);
   });
 
   it("caps memory and processes in every command", async () => {

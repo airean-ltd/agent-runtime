@@ -1,6 +1,6 @@
 {
   "name": "@eankhbayar/agent-runtime",
-  "version": "0.14.0",
+  "version": "0.14.1",
   "description": "Runtimes for sandboxed coding agents: the run-event contract, executeRun and the store interfaces, pipeline run events, a shared model client, a job harness and Cloud Run dispatch, Docker and Cloud Run sandbox providers, the egress gateway with project data commands and the agent-data CLI, and the in-sandbox runners of the pi runtime and the experimental pi-durable one.",
   "license": "UNLICENSED",
   "private": true,
