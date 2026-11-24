@@ -53,13 +53,21 @@ const MAX_ARG_BYTES = 128 * 1024 - 1;
 /**
  * A command's environment as shell for its wrapper to eval: one `export` per
  * variable, each value single-quoted, so any text, newlines and quotes too,
- * arrives as it is.
+ * arrives as it is. Linux will not start a program whose environment holds a
+ * string over MAX_ARG_BYTES ("Argument list too long"), so a longer
+ * `NAME=value` is refused here, before the sandbox is asked.
  */
 function envScript(env: Record<string, string>): string {
   return Object.entries(env)
     .map(([name, value]) => {
       if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) throw new Error(`Bad environment name ${name}`);
       if (value.includes("\0")) throw new Error(`The value of ${name} holds a NUL byte`);
+      const bytes = Buffer.byteLength(`${name}=${value}`);
+      if (bytes > MAX_ARG_BYTES) {
+        throw new Error(
+          `The environment variable ${name} is ${bytes} bytes, too long for a sandbox command (${MAX_ARG_BYTES} at most)`,
+        );
+      }
       return `export ${name}='${value.replaceAll("'", `'\\''`)}'\n`;
     })
     .join("");
