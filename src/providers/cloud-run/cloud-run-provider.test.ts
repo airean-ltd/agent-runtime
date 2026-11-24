@@ -133,9 +133,14 @@ describe("CloudRunSandboxProvider", { timeout: 30_000 }, () => {
       expect(stdout).toContain("PATH=/usr/local/sbin:");
       // The working directory is the workspace.
       expect(stdout.trim().split("\n").at(-1)).toContain(path.join(id, "workspace"));
-      // A value of any length, too long for an argument.
-      const long = await run(p, id, ["sh", "-c", 'printf %s "$PROMPT" | wc -c'], { env: { PROMPT: "x".repeat(200_000) } });
-      expect(long.stdout.trim()).toBe("200000");
+      // Linux starts no program whose environment holds a string this long, so it is refused at once.
+      await expect(p.exec(id, ["true"], { env: { PROMPT: "x".repeat(200_000) } }).done).rejects.toThrow(
+        /PROMPT is 200007 bytes, too long for a sandbox command/,
+      );
+      // One just inside the limit arrives whole.
+      const near = "x".repeat(128 * 1024 - 1 - "PROMPT=".length);
+      const long = await run(p, id, ["sh", "-c", 'printf %s "$PROMPT" | wc -c'], { env: { PROMPT: near } });
+      expect(long.stdout.trim()).toBe(String(near.length));
     } finally {
       delete process.env.AGENT_RUNTIME_TEST_SECRET;
     }
